@@ -1,0 +1,6 @@
+# 开发/测试依赖：跑全部测试（含界面）请装这个文件
+# 界面测试依赖 AppTest 的 file_uploader 支持，固定在实测能跑通的版本；
+# 只部署不测试的话用 requirements.txt 就够。
+-r requirements.txt
+pytest>=8,<10
+streamlit==1.66.0

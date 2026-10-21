@@ -1,0 +1,5 @@
+# 运行依赖（部署/自己用只需要这些）
+# 需要 Python 3.11+；本机按 Python 3.12 实测
+streamlit>=1.50,<2
+pandas>=2.2,<4
+openpyxl>=3.1,<4

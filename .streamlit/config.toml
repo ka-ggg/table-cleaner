@@ -1,0 +1,5 @@
+# 项目级 Streamlit 配置：关掉用量上报。
+# 1) 隐私：本工具处理的是用户表格，没必要向外发统计请求；
+# 2) 测试稳定：AppTest 启动会话时会尝试上报，网络不通时每项测试会卡几十秒超时。
+[browser]
+gatherUsageStats = false
