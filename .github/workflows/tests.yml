@@ -6,12 +6,32 @@ on:
 
 jobs:
   pytest:
+    # 测试 job 是合并门禁：3.11 / 3.12 任一版本红了都不允许合并。
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # 用 dev 依赖：streamlit 固定 1.66.0，界面测试（AppTest + file_uploader）才会真跑而不是跳过
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q -rs
+
+  ruff:
+    # 警告期（v2.2.0 引入）：只提示、不阻断合并。
+    # 切换为门禁的条件写在 ENGINEERING_STANDARDS.md 第 2 节与第 14 节：
+    # 本 job 连续两个版本全绿，且 per-file-ignores 清零后，删除 continue-on-error。
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # 用 dev 依赖：streamlit 固定 1.66.0，界面测试（AppTest + file_uploader）才会真跑而不是跳过
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q -rs
+      - run: ruff format --check .
+      - run: ruff check .
