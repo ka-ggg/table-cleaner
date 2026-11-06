@@ -1,13 +1,13 @@
 # 表格清洗小工具
 
-**当前版本：v2.0.1（214 项自动化测试 = 182 项逻辑 + 32 项界面）**
+**当前版本：v2.2.0（214 项自动化测试 = 182 项逻辑 + 32 项界面）**
 
 帮小商家和办公人员快速清理 CSV / XLSX：检查空值、重复行和可疑格式，按需删行、改列、算新列，
 一次处理多张工作表或多个文件，导出干净文件。中文界面，按手机屏幕适配；
 没有登录、数据库、支付和外部接口。
 （手机浏览器里的**人工**验收本轮未完成，原因见「真机验收清单」最后一节，不当作已通过项。）
 
-## 本版改动（v2.0.1：只修 bug，不加功能）
+## v2.0.1 的改动（行为基线：只修 bug，不加功能）
 
 这一版来自一次从零开始的商业化交付审查（见 `AUDIT_REPORT.md` / `BUGS_AND_FIXES.md`）。
 修的都是**会让用户拿到错数据或让页面不可用**的问题，行为口径变化如下：
@@ -203,9 +203,13 @@ table-cleaner/
 │   └── batch.py              # 多张工作表 / 多个文件 → 逐一清洗 → 打包 ZIP
 ├── samples/                  # 真机验收用的虚构样例（分号 CSV + 双表 XLSX）
 ├── requirements.txt          # 运行依赖（streamlit / pandas / openpyxl）
-├── requirements-dev.txt      # 测试依赖（streamlit 固定 1.66.0，界面测试才真跑）
+├── requirements-dev.txt      # 测试与工程工具依赖（含 streamlit 1.66.0 / ruff / mypy / coverage）
+├── pyproject.toml            # 打包元数据 + Ruff / mypy / coverage 配置
+├── ENGINEERING_STANDARDS.md  # 工程标准与细节要求（常设规范）
+├── LICENSE                   # MIT 许可证
 ├── pytest.ini                # 让 pytest 能 import 包与 app
-├── .github/workflows/tests.yml  # CI：装 dev 依赖跑 pytest -q -rs
+├── .github/workflows/tests.yml  # CI：Python 3.11/3.12 测试矩阵 + Ruff 警告 job
+├── .github/pull_request_template.md  # PR 自检清单
 ├── README.md
 ├── .streamlit/config.toml    # 关掉 Streamlit 用量上报（隐私 + 测试不等网络超时）
 ├── .gitignore
@@ -434,12 +438,12 @@ CSV 没有单元格类型，用 Excel/WPS 打开时，`=`、`+`、`-`、`@`、�
 ## 确认你在跑哪个版本
 
 ```bash
-grep '__version__' cleaning/__init__.py        # 应显示 2.0.1
+grep '__version__' cleaning/__init__.py        # 应显示 2.2.0
 grep APP_VERSION app.py                        # 应显示 cleaning.__version__
 python -m pytest --collect-only -q | tail -1   # 应显示 214 tests collected
 ```
 
-页面标题下方也会显示 `v2.0.1`。
+页面标题下方也会显示 `v2.2.0`。
 
 ## 安装
 
@@ -547,7 +551,8 @@ v1.x 原有覆盖（89 项）全部保留：正常/空/损坏/超大文件、分
 - 如果你看到 `182 passed, 2 skipped`，说明**界面测试被跳过了**，按下一节排查
   （最常见是没装 streamlit / 装的是 <1.66 的旧版）；这时不能算「214 项全通过」。
 - CI（`.github/workflows/tests.yml`）装的就是 `requirements-dev.txt`，命令与上面一致；
-  它在没有 lxml 的干净 runner 上也能全绿（v2.0.1 起）。
+  它在没有 lxml 的干净 runner 上也能全绿（v2.0.1 起）。v2.2.0 起测试矩阵覆盖 Python 3.11 与 3.12，
+  另有一个 Ruff 检查 job；Ruff 处于警告期（`continue-on-error: true`），测试 job 仍是合并门禁。
 - 历史环境记录（不代表本版）：pandas 2.2.3 + pytest 8.4.2 下 v1.5.0 时是 65 passed；本版未重跑该环境。
 
 ### 界面测试在什么情况下会被跳过（记录在案）
@@ -886,6 +891,7 @@ XLSX 编号文本/数字开关（v2.0.0）、分块清洗与硬超时（v2.0.0�
 | `CHANGELOG.md` | 你自己 | 版本变更记录 |
 | `RELEASE_CHECKLIST.md` | 你自己 | 发布前逐项打勾（含必须补的 LICENSE） |
 | `THIRD_PARTY_LICENSES.md` | 你自己/法务 | 三个运行依赖的许可证事实 |
+| `ENGINEERING_STANDARDS.md` | 你自己/技术复核 | 常设工程标准：分级、棘轮、边缘清单、测试/发布门禁与豁免登记 |
 
 ## 修改建议
 

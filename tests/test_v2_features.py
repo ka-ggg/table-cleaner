@@ -68,7 +68,7 @@ def test_package_exposes_legacy_public_api():
         "_estimate_csv_shape",
     ):
         assert hasattr(cleaning, name), f"cleaning 少了对外接口：{name}"
-    assert cleaning.__version__ == "2.0.1"
+    assert cleaning.__version__ == "2.2.0"
 
 
 def test_code_is_split_into_expected_modules():

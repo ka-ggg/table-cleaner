@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "table-cleaner"
-version = "2.0.1"
+version = "2.2.0"
 description = "CSV/XLSX 表格清洗工具：检查空值/重复行/可疑格式，按规则清洗并导出"
 readme = "README.md"
 requires-python = ">=3.11"

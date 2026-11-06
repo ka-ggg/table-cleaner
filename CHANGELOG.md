@@ -3,6 +3,62 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号规则：修 bug 升末位（2.0.0 → 2.0.1），加功能升中位，不兼容改动升首位。
 
+## [2.2.0] — 2026-11-06
+
+> 只变形态，不动清洗语义：把工程规范、打包、静态检查、类型检查、覆盖率测量、
+> CI 矩阵、许可证与 PR 流程补齐。清洗行为、判定规则、公共 API 导出均未改变。
+
+### 新增
+
+- **`ENGINEERING_STANDARDS.md`**：常设《工程标准与细节要求》，14 节正文 + 40 条细节总清单；
+  每条标准五要素齐全（编号/级别/条文/检查方法/违反后果），含豁免登记表、规范变更记录、
+  棘轮还债节奏、6 类改动的边缘清单与 M1–M4 落地安排。
+- **`pyproject.toml`**：`name = "table-cleaner"`、`version = "2.2.0"`、Python `>=3.11`；
+  setuptools 构建配置使 `pip install .` 可安装 `cleaning` 包；同时写入 Ruff（format + check）、
+  mypy（非严格）、coverage 配置。公共 API 仍以 `cleaning/__init__.py` 的 `__all__` 为唯一清单。
+- **Ruff 0.17.4**：全仓 `ruff format` 与 `ruff check --fix`，只做格式化与导入排序，无语义变更；
+  `ruff format --check .` 与 `ruff check .` 均通过，无 `per-file-ignores`。
+- **mypy 2.4.1**：对 `cleaning/` 启用非严格检查（`ignore_missing_imports`、
+  `follow_imports = "silent"` 等），基线错误 **4 条**，全部在 `cleaning/transform.py`，
+  登记为棘轮还债项（未改逻辑换通过）。
+- **coverage 7.17.2**：实测 `cleaning/` 行覆盖率 **93%**（1178→格式化后 1183 statements，83 missed），
+  仅测量公布，本版不设门禁。
+- **`.github/pull_request_template.md`**：按 ENGINEERING_STANDARDS 第 11 节写 7 组自检清单
+  （改动归类、边缘清单、回归测试与旧代码失败验证、文档同步、benchmark 影响、豁免登记、CHANGELOG）。
+- **`.github/workflows/tests.yml`**：测试矩阵扩到 Python **3.11 + 3.12**（测试 job 仍是门禁）；
+  新增 Ruff 检查 job，`continue-on-error: true` 警告期运行，注释写明切换条件。
+- **`LICENSE`**：MIT，`Copyright (c) 2026 ka-ggg`。
+- `requirements-dev.txt` 补 `ruff==0.17.4`、`mypy==2.4.1`、`coverage==7.17.2`（本机实测可装版本）。
+
+### 变更
+
+- 现行版本统一升到 **2.2.0**：`pyproject.toml`、`cleaning/__init__.py` 的 `__version__`、
+  页面标题下方版本（`app.py` 读 `cleaning.__version__`，自动跟随）、README 首屏与版本核对命令。
+- README 项目结构、CI 说明同步新增文件与 Python 3.11/3.12 矩阵；
+  `USER_GUIDE.md` 的现行版本号同步为 v2.2.0。历史文档中叙述旧版本行为的文字未改。
+- `tests/test_v2_features.py` 与 `tests/test_regressions_v201.py` 各 1 处版本断言
+  从 `2.0.1` 更新为 `2.2.0`；只改版本期望值，测试逻辑与数量不变（仍为 214 项）。
+
+### 测试与质量基线（2026-11-06 实跑）
+
+- `python -m pytest -q -rs`：**214 passed，0 skipped**（Ruff 格式化前后各跑一次，均全过）。
+- `ruff format --check .`：通过；`ruff check .`：`All checks passed!`。
+- `mypy`（`cleaning/`，非严格）：`Found 4 errors in 1 file (checked 10 source files)`。
+- `coverage run -m pytest -q` + `coverage report --include='cleaning/*'`：**93%**。
+- `pip install .`：在已有 `.venv` 中安装成功，元数据版本 `2.2.0`，`import cleaning` 正常。
+
+### 已知限制与未完成项
+
+- **覆盖率仅基线、未设门禁**：93% 只是实测公布值，CI 不按覆盖率拦截；门禁切换按规范第 14 节排期。
+- **mypy 非严格**：仍有 4 条 transform.py 错误，未通过改逻辑或 `Any` 绕过；属棘轮还债项。
+- **Ruff 仍处警告期**：CI 的 Ruff job `continue-on-error: true`，不阻断合并；切换条件已写入规范。
+- **Python 3.11 矩阵未在本地实跑**：本机只有 3.12，3.11 由 CI 配置覆盖，本地实测记为「未执行」。
+- **真机/手机浏览器人工验收未执行**：容器读屏、截图与端口可达性限制，详见 README 与 TEST_REPORT 的未执行项。
+- **pip-audit 未接入 CI**：规范列为目标，本版未安装、未加入 workflow。
+- **benchmark 基线未建立**：性能回退 10% 阈值只是目标值，本版未测、未设门禁。
+- **CLI、引擎替换、模板 version 字段、Benchmark 套件**：不在本版范围（见任务简报「明确不做」）。
+- 本次未执行 push；tag `v2.2.0` 打在本地最终提交上，推送由需求方验收后执行。
+
 ## [2.0.1] — 2026-10-20
 
 > 只修 bug，不加功能。来自一次从零开始的商业化交付审查
