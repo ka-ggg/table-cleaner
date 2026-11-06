@@ -4,3 +4,7 @@
 -r requirements.txt
 pytest>=8,<10
 streamlit==1.66.0
+# 工程工具链（v2.2.0 引入，版本为本机实测可装的稳定版）
+ruff==0.17.4
+mypy==2.4.1
+coverage==7.17.2
