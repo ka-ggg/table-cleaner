@@ -30,6 +30,7 @@ dependencies = [
 
 [project.scripts]
 table-cleaner = "cleaning.cli:main"
+table-cleaner-api = "cleaning.http_api:main"
 
 [project.optional-dependencies]
 dev = [
