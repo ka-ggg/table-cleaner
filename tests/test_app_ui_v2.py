@@ -8,11 +8,10 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+import cleaning
 import openpyxl
 import pandas as pd
 import pytest
-
-import cleaning
 
 APP_PATH = Path(__file__).resolve().parent.parent / "app.py"
 
@@ -55,12 +54,8 @@ OPS_CSV = "商品,单价,数量\n苹果,10,2\n梨,20,3\n".encode("utf-8-sig")
 def two_sheet_xlsx() -> bytes:
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        pd.DataFrame({"编号": ["A1", "A1", "A2"], "金额": [1, 1, 2]}).to_excel(
-            writer, index=False, sheet_name="订单"
-        )
-        pd.DataFrame({"编号": ["B1", "B2"], "金额": [3, 4]}).to_excel(
-            writer, index=False, sheet_name="客户"
-        )
+        pd.DataFrame({"编号": ["A1", "A1", "A2"], "金额": [1, 1, 2]}).to_excel(writer, index=False, sheet_name="订单")
+        pd.DataFrame({"编号": ["B1", "B2"], "金额": [3, 4]}).to_excel(writer, index=False, sheet_name="客户")
     return buffer.getvalue()
 
 
@@ -128,11 +123,7 @@ def test_computed_column_preview_visible_in_page(app):
     _by_label(at.text_area, "计算列").input("总额=单价*数量").run()
     assert not list(at.exception)
 
-    frames = [
-        frame.value
-        for frame in at.dataframe
-        if "总额" in getattr(frame.value, "columns", [])
-    ]
+    frames = [frame.value for frame in at.dataframe if "总额" in getattr(frame.value, "columns", [])]
     assert frames, "页面上没有出现带计算列的预览"
     assert frames[0]["总额"].tolist() == [20, 60]
 
@@ -235,17 +226,13 @@ def test_template_save_and_apply_restores_widgets(app):
 
 def test_template_file_upload_applies_rules(app):
     """上传之前下载的模板 JSON：自动套用（表头行、去重勾选都恢复）。"""
-    template = cleaning.build_template(
-        {"表头行": 2, "删除完全重复的行": True}, name="报表模板"
-    )
+    template = cleaning.build_template({"表头行": 2, "删除完全重复的行": True}, name="报表模板")
     at = app()
     at.get("file_uploader")[0].upload("报表.csv", TITLED_CSV, "text/csv").run()
     assert {m.label: m.value for m in at.metric} == {"行数": "4", "列数": "1"}
 
     template_uploader = _by_label(at.get("file_uploader"), "上传之前保存的模板")
-    template_uploader.set_value(
-        ("模板.json", cleaning.dumps(template), "application/json")
-    ).run()
+    template_uploader.set_value(("模板.json", cleaning.dumps(template), "application/json")).run()
     assert not list(at.exception)
     assert _by_label(at.number_input, "表头在第几行").value == 2
     assert at.checkbox[0].value is True
@@ -258,9 +245,7 @@ def test_template_file_upload_applies_rules(app):
 def test_formula_mode_radio_controls_csv_export(app):
     """三种公式防护模式在真实页面上切换后，导出的 CSV 内容跟着变，旧文件自动失效。"""
     at = app()
-    at.get("file_uploader")[0].upload(
-        "订单.csv", "备注\n=1+1\n正常\n".encode("utf-8-sig"), "text/csv"
-    ).run()
+    at.get("file_uploader")[0].upload("订单.csv", "备注\n=1+1\n正常\n".encode("utf-8-sig"), "text/csv").run()
     at.button[0].click().run()
     assert "'=1+1" in at.session_state["exports"]["csv"].decode("utf-8-sig")
 
@@ -277,9 +262,7 @@ def test_formula_mode_radio_controls_csv_export(app):
 def test_xlsx_number_mode_radio_changes_cell_types(app):
     """编号 00123：默认强制文本；切到「尝试转数字」后 XLSX 里是真数字。"""
     at = app()
-    at.get("file_uploader")[0].upload(
-        "编号.csv", "编号\n00123\nA002\n".encode("utf-8-sig"), "text/csv"
-    ).run()
+    at.get("file_uploader")[0].upload("编号.csv", "编号\n00123\nA002\n".encode("utf-8-sig"), "text/csv").run()
     at.button[0].click().run()
     sheet = openpyxl.load_workbook(BytesIO(at.session_state["exports"]["xlsx"])).active
     assert sheet["A2"].value == "00123"

@@ -24,9 +24,7 @@ def _as_name_list(value: Any, key: str) -> list[str]:
     if value is None:
         return []
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise TableError(
-            f"模板里的「{key}」应为列名列表，例如 [\"订单号\"]；请检查模板文件。"
-        )
+        raise TableError(f'模板里的「{key}」应为列名列表，例如 ["订单号"]；请检查模板文件。')
     return [item for item in value if item.strip()]
 
 
@@ -43,11 +41,7 @@ def _as_pairs(value: Any, key: str, example: str) -> list[tuple[str, str]]:
         return pairs
     if isinstance(value, list):
         for item in value:
-            if (
-                not isinstance(item, list)
-                or len(item) != 2
-                or not all(isinstance(part, str) for part in item)
-            ):
+            if not isinstance(item, list) or len(item) != 2 or not all(isinstance(part, str) for part in item):
                 raise TableError(f"模板里的「{key}」应为「旧=新」的文字，{example}。")
             pairs.append((item[0], item[1]))
         return pairs
@@ -59,10 +53,7 @@ def _as_computed(value: Any) -> list[tuple[str, str]]:
         return []
     pairs: list[tuple[str, str]] = []
     if not isinstance(value, list):
-        raise TableError(
-            "模板里的「计算列」应为列表，例如 "
-            "[{\"列名\": \"总额\", \"表达式\": \"单价*数量\"}]。"
-        )
+        raise TableError('模板里的「计算列」应为列表，例如 [{"列名": "总额", "表达式": "单价*数量"}]。')
     for item in value:
         if isinstance(item, dict):
             name = item.get("列名") or item.get("name")
@@ -73,8 +64,7 @@ def _as_computed(value: Any) -> list[tuple[str, str]]:
             name = expr = None
         if not isinstance(name, str) or not isinstance(expr, str) or not name.strip():
             raise TableError(
-                "模板里的「计算列」每一项都要有「列名」和「表达式」，"
-                "例如 {\"列名\": \"总额\", \"表达式\": \"单价*数量\"}。"
+                '模板里的「计算列」每一项都要有「列名」和「表达式」，例如 {"列名": "总额", "表达式": "单价*数量"}。'
             )
         pairs.append((name.strip(), expr.strip()))
     return pairs
@@ -84,9 +74,7 @@ def _as_header_row(value: Any) -> int:
     if value is None:
         return 1
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise TableError(
-            f"模板里的「表头行」应为大于 0 的整数，收到 {value!r}；请检查模板文件。"
-        )
+        raise TableError(f"模板里的「表头行」应为大于 0 的整数，收到 {value!r}；请检查模板文件。")
     number = int(value)
     if number < 1:
         raise TableError("模板里的「表头行」应为大于 0 的整数（第 1 行起算）。")
@@ -105,7 +93,7 @@ def normalize_rules(rules: Any) -> dict[str, Any]:
     """校验并规整规则字典；不认识的字段忽略（旧版模板/手写模板都能用）。"""
     if not isinstance(rules, dict):
         raise TableError("模板里的「规则」应为一组设置，请用本工具导出的模板文件。")
-    rename = _as_pairs(rules.get("列重命名"), "列重命名", "例如 {\"金额\": \"总金额\"}")
+    rename = _as_pairs(rules.get("列重命名"), "列重命名", '例如 {"金额": "总金额"}')
     return {
         "表头行": _as_header_row(rules.get("表头行")),
         "删除完全重复的行": _as_bool(rules.get("删除完全重复的行"), "删除完全重复的行"),
@@ -120,9 +108,7 @@ def normalize_rules(rules: Any) -> dict[str, Any]:
     }
 
 
-def build_template(
-    rules: dict[str, Any], name: str = "", now: datetime | None = None
-) -> dict[str, Any]:
+def build_template(rules: dict[str, Any], name: str = "", now: datetime | None = None) -> dict[str, Any]:
     """生成可下载的模板对象；rules 不合法时直接抛中文错误（不让用户存下坏模板）。"""
     normalized = normalize_rules(rules)
     return {
@@ -136,9 +122,7 @@ def build_template(
 
 def dumps(template: dict[str, Any]) -> bytes:
     """导出模板 JSON 字节（UTF-8，中文不转义，方便用记事本查看和改）。"""
-    return (
-        json.dumps(template, ensure_ascii=False, indent=2, sort_keys=False) + "\n"
-    ).encode("utf-8")
+    return (json.dumps(template, ensure_ascii=False, indent=2, sort_keys=False) + "\n").encode("utf-8")
 
 
 def loads(data: bytes | str) -> dict[str, Any]:
@@ -147,9 +131,7 @@ def loads(data: bytes | str) -> dict[str, Any]:
         if not data:
             raise TableError("模板文件是空的（0 字节），请重新选择。")
         if len(data) > _MAX_TEMPLATE_BYTES:
-            raise TableError(
-                "模板文件超过 1 MB，多半是选错了文件；模板里只存规则，正常只有几 KB。"
-            )
+            raise TableError("模板文件超过 1 MB，多半是选错了文件；模板里只存规则，正常只有几 KB。")
         text = None
         for encoding in ("utf-8-sig", "gb18030"):
             try:
@@ -158,17 +140,14 @@ def loads(data: bytes | str) -> dict[str, Any]:
             except UnicodeDecodeError:
                 continue
         if text is None:
-            raise TableError(
-                "模板文件编码无法识别，请用本工具导出的模板（UTF-8 编码的 .json）。"
-            )
+            raise TableError("模板文件编码无法识别，请用本工具导出的模板（UTF-8 编码的 .json）。")
     else:
         text = data
     try:
         document = json.loads(text)
     except json.JSONDecodeError as exc:
         raise TableError(
-            f"模板文件不是有效的 JSON（{exc.msg}，第 {exc.lineno} 行）；"
-            "请重新下载模板，或用文本编辑器检查逗号和引号。"
+            f"模板文件不是有效的 JSON（{exc.msg}，第 {exc.lineno} 行）；请重新下载模板，或用文本编辑器检查逗号和引号。"
         ) from None
     if not isinstance(document, dict):
         raise TableError("模板文件里应是一个 JSON 对象，请用本工具导出的模板。")
@@ -176,9 +155,7 @@ def loads(data: bytes | str) -> dict[str, Any]:
     return normalize_rules(rules)
 
 
-def filter_for_columns(
-    rules: dict[str, Any], columns: Iterable[str]
-) -> tuple[dict[str, Any], list[str]]:
+def filter_for_columns(rules: dict[str, Any], columns: Iterable[str]) -> tuple[dict[str, Any], list[str]]:
     """把模板里当前文件没有的列剔掉，返回（可用规则, 中文说明）。
 
     模板是给「同类表格」复用的，列名可能略有出入；直接套用会静默忽略不存在的列，
@@ -226,9 +203,7 @@ def rules_to_rename_text(rules: dict[str, Any]) -> str:
 
 def rules_to_computed_text(rules: dict[str, Any]) -> str:
     """模板里的计算列 → 界面文本框内容（每行「新列名=表达式」）。"""
-    return "\n".join(
-        f"{name}={expr}" for name, expr in normalize_rules(rules)["计算列"]
-    )
+    return "\n".join(f"{name}={expr}" for name, expr in normalize_rules(rules)["计算列"])
 
 
 def summarize_rules(rules: dict[str, Any]) -> str:
@@ -254,4 +229,3 @@ def summarize_rules(rules: dict[str, Any]) -> str:
     if normalized["表头行"] != 1:
         parts.append(f"表头在第 {normalized['表头行']} 行")
     return "；".join(parts) if parts else "没有任何规则（相当于原样导出）"
-

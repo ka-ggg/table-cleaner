@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from cleaning import to_xlsx_bytes
 
 APP_PATH = Path(__file__).resolve().parent.parent / "app.py"
@@ -41,10 +40,12 @@ if not hasattr(streamlit_testing.element_tree, "FileUploader"):
 @pytest.fixture(scope="module")
 def app():
     """每个测试都从干净页面开始，避免 session_state 串味。"""
+
     def _new():
         at = AppTest.from_file(str(APP_PATH), default_timeout=180).run()
         assert not list(at.exception), list(at.exception)
         return at
+
     return _new
 
 
@@ -239,10 +240,7 @@ def test_row_limit_shows_error_not_crash(app, monkeypatch):
 # ---------------------------------------------------------------- 1.7.0 新功能
 
 DEDUPE_CSV = (
-    "订单号,客户,金额,备注\n"
-    "A001,晨光小吃店,128,送货前电话\n"
-    "A001,晨光小吃店,200,改单后重下一单\n"
-    "A002,星语文具,0,\n"
+    "订单号,客户,金额,备注\nA001,晨光小吃店,128,送货前电话\nA001,晨光小吃店,200,改单后重下一单\nA002,星语文具,0,\n"
 ).encode("utf-8-sig")
 
 
@@ -259,12 +257,10 @@ def _multi_sheet_xlsx() -> bytes:
     """造一个双工作表 XLSX：两张表行列数不同，才能验证真的换了表。"""
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        pd.DataFrame({"编号": ["001", "002"], "金额": [1.5, 2.5]}).to_excel(
-            writer, sheet_name="第一张", index=False
+        pd.DataFrame({"编号": ["001", "002"], "金额": [1.5, 2.5]}).to_excel(writer, sheet_name="第一张", index=False)
+        pd.DataFrame({"编号": ["A1", "A2", "A3"], "名称": ["甲", "乙", "丙"], "金额": [1, 2, 3]}).to_excel(
+            writer, sheet_name="第二张", index=False
         )
-        pd.DataFrame(
-            {"编号": ["A1", "A2", "A3"], "名称": ["甲", "乙", "丙"], "金额": [1, 2, 3]}
-        ).to_excel(writer, sheet_name="第二张", index=False)
     return buf.getvalue()
 
 
@@ -332,9 +328,7 @@ def test_dedupe_by_column_ui_end_to_end(app):
     assert _step_counts(at).get("按指定列去重") == 1
 
     at.button[0].click().run()
-    back = pd.read_csv(
-        BytesIO(at.session_state["exports"]["csv"]), dtype=str, keep_default_na=False
-    )
+    back = pd.read_csv(BytesIO(at.session_state["exports"]["csv"]), dtype=str, keep_default_na=False)
     assert back.shape == (2, 4)
     assert back["订单号"].tolist() == ["A001", "A002"]
     assert back["金额"].tolist() == ["128", "0"]  # 保留第一次出现的 A001

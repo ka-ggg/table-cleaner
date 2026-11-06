@@ -90,9 +90,7 @@ def current_limits(**overrides: int) -> Limits:
     return Limits(**values)
 
 
-def raise_shape_limit(
-    rows: int, cols: int, source: str, hint: str = "", limits: Limits | None = None
-) -> None:
+def raise_shape_limit(rows: int, cols: int, source: str, hint: str = "", limits: Limits | None = None) -> None:
     """超限时的统一中文提示；解析前的估算和解析后的实际值共用同一套话术。"""
     lim = limits or current_limits()
     tail = f" {hint}" if hint else ""
@@ -104,8 +102,7 @@ def raise_shape_limit(
         )
     if cols > lim.max_cols:
         raise TableError(
-            f"{source}的列数 {cols:,} 超过上限 {lim.max_cols:,} 列；"
-            f"请删掉不需要的列或拆分后再上传。{tune}{tail}"
+            f"{source}的列数 {cols:,} 超过上限 {lim.max_cols:,} 列；请删掉不需要的列或拆分后再上传。{tune}{tail}"
         )
     if rows * cols > lim.max_cells:
         raise TableError(
@@ -114,9 +111,7 @@ def raise_shape_limit(
         )
 
 
-def check_shape_limits(
-    rows: int, cols: int, source: str, hint: str = "", limits: Limits | None = None
-) -> None:
+def check_shape_limits(rows: int, cols: int, source: str, hint: str = "", limits: Limits | None = None) -> None:
     """解析前先按估算规模拒绝，避免超限文件已经占满内存。"""
     lim = limits or current_limits()
     if rows > lim.max_rows or cols > lim.max_cols or rows * cols > lim.max_cells:

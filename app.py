@@ -9,10 +9,9 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 
+import cleaning
 import pandas as pd
 import streamlit as st
-
-import cleaning
 from cleaning import (
     DUPLICATE_RULE,
     MISSING_RULE,
@@ -92,9 +91,7 @@ def sidebar_settings() -> tuple[cleaning.Limits, float | None]:
             f"当前：单文件 {int(upload_mb)} MB · {int(max_rows):,} 行 · "
             f"超时 {'不限' if not timeout else f'{int(timeout)} 秒'}"
         )
-    limits = defaults._replace(
-        max_upload_bytes=int(upload_mb) * 1024 * 1024, max_rows=int(max_rows)
-    )
+    limits = defaults._replace(max_upload_bytes=int(upload_mb) * 1024 * 1024, max_rows=int(max_rows))
     return limits, (float(timeout) if timeout else None)
 
 
@@ -166,12 +163,8 @@ def rules_from_state(ops: ColumnOps) -> dict:
     return {
         "表头行": int(st.session_state.get("表头行", 1)),
         "删除完全重复的行": bool(st.session_state.get("规则_删除重复行", False)),
-        "按列去重": list(st.session_state.get("规则_去重列", []))
-        if st.session_state.get("规则_按列去重")
-        else [],
-        "删除空值行": list(st.session_state.get("规则_空值列", []))
-        if st.session_state.get("规则_删除空值行")
-        else [],
+        "按列去重": list(st.session_state.get("规则_去重列", [])) if st.session_state.get("规则_按列去重") else [],
+        "删除空值行": list(st.session_state.get("规则_空值列", [])) if st.session_state.get("规则_删除空值行") else [],
         "列重命名": [list(pair) for pair in ops.rename],
         "删除列": list(ops.drop),
         "列顺序": list(ops.order),
@@ -184,15 +177,11 @@ def rules_from_state(ops: ColumnOps) -> dict:
 # ---------------------------------------------------------------- 读取文件
 
 
-def get_source(
-    limits: cleaning.Limits, timeout: float | None
-) -> tuple[str, bytes | None, LoadedTable] | None:
+def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, bytes | None, LoadedTable] | None:
     """读取上传文件或样例数据；出错时展示原因并返回 None。"""
     # 不限制选择器类型：让 .txt/.xls 也能选中，由 load_table 给中文提示，
     # 否则只会看到组件自带的英文报错。
-    upload = st.file_uploader(
-        f"上传 CSV 或 XLSX 文件（最大 {limits.max_upload_mb} MB）", key="主文件"
-    )
+    upload = st.file_uploader(f"上传 CSV 或 XLSX 文件（最大 {limits.max_upload_mb} MB）", key="主文件")
     use_demo = st.toggle("没有文件？用虚构样例数据演示", value=False, key="样例开关")
     # 不传 value：初始值由 session_state 决定（模板可以预设），避免 Streamlit 警告
     header_row = st.number_input(
@@ -251,8 +240,7 @@ def get_source(
                         st.error(f"工作表「{chosen}」读不了：{exc}")
                         loaded = default
                         loaded.notes.append(
-                            f"当前显示的是「{loaded.sheet_name}」；可以换一张表，"
-                            "或把这张表拆分后再上传。"
+                            f"当前显示的是「{loaded.sheet_name}」；可以换一张表，或把这张表拆分后再上传。"
                         )
             return name, data, loaded
         except TableError as exc:
@@ -275,11 +263,7 @@ def get_source(
 def show_checks(df: pd.DataFrame, stats: dict[str, int]) -> None:
     """展示空值、重复行、可疑数据三类检查结果。"""
     missing = find_missing(df)
-    missing_rows = [
-        {"列名": str(col), "空值数量": int(count)}
-        for col, count in missing.items()
-        if count > 0
-    ]
+    missing_rows = [{"列名": str(col), "空值数量": int(count)} for col, count in missing.items() if count > 0]
     if missing_rows:
         st.write("各列空值数量")
         st.dataframe(pd.DataFrame(missing_rows), width="stretch", hide_index=True)
@@ -315,16 +299,12 @@ def show_row_rules(columns: list[str]) -> None:
     st.subheader("3. 选择清洗操作（默认都不执行）")
     st.checkbox("删除完全重复的行", key="规则_删除重复行")
     drop_na = st.checkbox("删除指定列中有空值的行", key="规则_删除空值行")
-    target_cols = st.multiselect(
-        "选择要检查空值的列", options=columns, disabled=not drop_na, key="规则_空值列"
-    )
+    target_cols = st.multiselect("选择要检查空值的列", options=columns, disabled=not drop_na, key="规则_空值列")
     if drop_na and not target_cols:
         st.warning("已勾选删除空值行，但还没有选择列，这一步暂时不会删除任何行。")
 
     dedupe = st.checkbox("按指定列去重（保留第一次出现的行）", key="规则_按列去重")
-    dedupe_cols = st.multiselect(
-        "选择去重用的列", options=columns, disabled=not dedupe, key="规则_去重列"
-    )
+    dedupe_cols = st.multiselect("选择去重用的列", options=columns, disabled=not dedupe, key="规则_去重列")
     if dedupe and not dedupe_cols:
         st.warning("已勾选按列去重，但还没有选择列，这一步暂时不会去重。")
 
@@ -406,9 +386,7 @@ def show_comparison(
     if report.steps:
         st.write("每一步删掉多少行")
         st.dataframe(
-            pd.DataFrame(
-                [{"步骤": label, "删掉行数": n} for label, n in report.steps.items()]
-            ),
+            pd.DataFrame([{"步骤": label, "删掉行数": n} for label, n in report.steps.items()]),
             width="stretch",
             hide_index=True,
         )
@@ -427,10 +405,7 @@ def show_comparison(
         st.write("清洗后预览（前 10 行）")
         st.dataframe(cleaned.head(10), width="stretch", hide_index=True)
     else:
-        st.info(
-            "当前没有实际删除任何行，也没有改列。CSV 若开启防公式，危险开头的文本会加前缀；"
-            "关闭后与原数据一致。"
-        )
+        st.info("当前没有实际删除任何行，也没有改列。CSV 若开启防公式，危险开头的文本会加前缀；关闭后与原数据一致。")
     return report, stats
 
 
@@ -495,9 +470,7 @@ def show_export(
             except TableError as exc:
                 xlsx_bytes, xlsx_error = None, str(exc)
             except Exception:
-                xlsx_bytes, xlsx_error = None, (
-                    "生成 XLSX 失败，请改用 CSV 下载；数据里可能有 Excel 不支持的格式。"
-                )
+                xlsx_bytes, xlsx_error = None, ("生成 XLSX 失败，请改用 CSV 下载；数据里可能有 Excel 不支持的格式。")
             try:
                 deadline.check("生成 CSV")
                 csv_bytes = to_csv_bytes(cleaned, neutralize_formulas=formula_mode)
@@ -570,9 +543,7 @@ def show_batch(
         st.caption("不开也不影响上面的单个文件流程；需要一次处理多张表/多个文件时再打开。")
         return
 
-    fmt_label = st.radio(
-        "批量文件格式", ["CSV", "XLSX"], index=0, horizontal=True, key="批量_格式"
-    )
+    fmt_label = st.radio("批量文件格式", ["CSV", "XLSX"], index=0, horizontal=True, key="批量_格式")
     jobs: list[cleaning.BatchJob] = []
 
     sheet_names = list(loaded.sheet_names)
@@ -583,9 +554,7 @@ def show_batch(
             default=sheet_names,
             key=f"批量_工作表_{name}",
         )
-        jobs.extend(
-            cleaning.BatchJob(name, sheet, data) for sheet in chosen_sheets
-        )
+        jobs.extend(cleaning.BatchJob(name, sheet, data) for sheet in chosen_sheets)
     elif data is not None:
         jobs.append(cleaning.BatchJob(name, None, data))
 
@@ -638,9 +607,7 @@ def show_batch(
         st.session_state["批量_结果"] = {
             "signature": signature,
             "report": report,
-            "name": cleaning.timestamped_name(
-                f"批量{len(jobs)}项", "zip", prefix="清洗结果"
-            ),
+            "name": cleaning.timestamped_name(f"批量{len(jobs)}项", "zip", prefix="清洗结果"),
         }
 
     stored = st.session_state.get("批量_结果")
@@ -677,9 +644,7 @@ def show_batch(
         )
 
 
-def show_templates(
-    columns: list[str], ops: ColumnOps, problems: list[str]
-) -> None:
+def show_templates(columns: list[str], ops: ColumnOps, problems: list[str]) -> None:
     """第 8 步：清洗规则模板（纯 session_state + 可下载 JSON，不依赖服务器）。"""
     st.subheader("8. 清洗规则模板（可选）")
     st.caption(
@@ -688,9 +653,7 @@ def show_templates(
     )
     saved: dict[str, dict] = st.session_state.setdefault("规则模板", {})
 
-    uploaded = st.file_uploader(
-        "上传之前保存的模板（.json）", type=["json"], key="模板_上传"
-    )
+    uploaded = st.file_uploader("上传之前保存的模板（.json）", type=["json"], key="模板_上传")
     if uploaded is not None:
         token = f"{uploaded.name}:{uploaded.size}"
         if st.session_state.get("_模板已读") != token:
@@ -709,16 +672,12 @@ def show_templates(
             st.error("进阶设置有格式问题，先把下面这些改好再保存：" + "；".join(problems))
         else:
             try:
-                template = cleaning.build_template(
-                    rules_from_state(ops), name=tpl_name
-                )
+                template = cleaning.build_template(rules_from_state(ops), name=tpl_name)
             except TableError as exc:
                 st.error(f"这套规则存不下来：{exc}")
             else:
                 saved[template["名称"]] = template
-                st.success(
-                    f"已保存模板「{template['名称']}」；下面可以「下载」存到手机或「套用」。"
-                )
+                st.success(f"已保存模板「{template['名称']}」；下面可以「下载」存到手机或「套用」。")
 
     if not saved:
         st.info("还没有保存过模板。勾好规则后点「保存当前规则为模板」。")
@@ -744,9 +703,7 @@ def show_templates(
 
 def main() -> None:
     st.title("表格清洗小工具")
-    st.caption(
-        f"v{APP_VERSION} · 上传 → 检查 → 勾选清洗操作 → 生成并下载。原始文件不会被修改。"
-    )
+    st.caption(f"v{APP_VERSION} · 上传 → 检查 → 勾选清洗操作 → 生成并下载。原始文件不会被修改。")
     st.caption("工具只能帮你发现常见问题，不保证所有数据都正确，导出前请自己核对。")
 
     apply_pending_template()
@@ -789,9 +746,7 @@ def main() -> None:
     options = CleanOptions(
         header_row=int(st.session_state.get("表头行", 1)),
         drop_duplicates=bool(st.session_state.get("规则_删除重复行", False)),
-        dedupe_on=tuple(st.session_state.get("规则_去重列", []))
-        if st.session_state.get("规则_按列去重")
-        else (),
+        dedupe_on=tuple(st.session_state.get("规则_去重列", [])) if st.session_state.get("规则_按列去重") else (),
         drop_missing_in=tuple(st.session_state.get("规则_空值列", []))
         if st.session_state.get("规则_删除空值行")
         else (),

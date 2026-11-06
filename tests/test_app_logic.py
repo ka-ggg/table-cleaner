@@ -6,23 +6,22 @@
 import zipfile
 from io import BytesIO
 
+import cleaning
 import openpyxl
 import pandas as pd
 import pytest
-
-import cleaning
 from cleaning import (
     EXCEL_MAX_ROWS,
     FORMULA_ISSUE,
-    SPACE_ISSUE,
     MAX_UPLOAD_BYTES,
+    SPACE_ISSUE,
     TableError,
+    _is_text_column,
+    _looks_like_formula,
     clean_data,
     clean_report,
     find_missing,
     find_suspicious,
-    _is_text_column,
-    _looks_like_formula,
     load_table,
     make_sample_df,
     shield_csv_formulas,
@@ -118,9 +117,7 @@ def test_load_xlsx_keeps_literal_na_text():
 
 def test_load_xlsx_roundtrip():
     """正常 XLSX：数字 0 保留，空白单元格被识别为缺失。"""
-    original = pd.DataFrame(
-        {"编号": ["00123", "A002"], "金额": [0, 128.5], "备注": ["", None]}
-    )
+    original = pd.DataFrame({"编号": ["00123", "A002"], "金额": [0, 128.5], "备注": ["", None]})
     loaded = load_table("数据.xlsx", to_xlsx_bytes(original))
     df = loaded.df
 
@@ -354,9 +351,7 @@ def test_quoted_newline_file_near_row_limit_is_not_rejected(monkeypatch):
 def test_csv_row_limit_checked_before_parsing(monkeypatch):
     """超限 CSV 不能先进 read_csv 占内存：解析前按行数预检就拒绝。"""
     monkeypatch.setattr(cleaning, "MAX_ROWS", 5)
-    monkeypatch.setattr(
-        pd, "read_csv", lambda *a, **k: pytest.fail("read_csv 不该被调用")
-    )
+    monkeypatch.setattr(pd, "read_csv", lambda *a, **k: pytest.fail("read_csv 不该被调用"))
     with pytest.raises(TableError, match="行数"):
         load_table("rows.csv", csv_bytes("值\n" + "1\n" * 10))
 
@@ -370,13 +365,11 @@ def _tamper_dimension(raw: bytes, new_ref: bytes, sheet: str = "sheet1.xml") -> 
 
     # 不同 XML 序列化器（lxml / stdlib）写的自闭合标签空格不同：
     # lxml 是 <dimension ref="A1"/>，stdlib 是 <dimension ref="A1" />，两种都要认。
-    tampered = _re.sub(rb'<dimension\b[^>]*?/>', b'<dimension ref="' + new_ref + b'"/>', content, count=1)
+    tampered = _re.sub(rb"<dimension\b[^>]*?/>", b'<dimension ref="' + new_ref + b'"/>', content, count=1)
     assert tampered != content, "没找到 dimension，测试本身失效"
 
     out = BytesIO()
-    with zipfile.ZipFile(BytesIO(raw)) as source, zipfile.ZipFile(
-        out, "w", zipfile.ZIP_DEFLATED
-    ) as target:
+    with zipfile.ZipFile(BytesIO(raw)) as source, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
         for item in source.infolist():
             target.writestr(item.filename, tampered if item.filename == entry else source.read(item.filename))
     return out.getvalue()
@@ -469,9 +462,7 @@ def _xlsx_with_chart(rows: int = 3) -> bytes:
     for i in range(rows):
         sheet.append([i, i * 10])
     chart = BarChart()
-    chart.add_data(
-        Reference(sheet, min_col=2, min_row=1, max_row=rows + 1), titles_from_data=True
-    )
+    chart.add_data(Reference(sheet, min_col=2, min_row=1, max_row=rows + 1), titles_from_data=True)
     sheet.add_chart(chart, "D2")
     workbook.save(buffer)
     return buffer.getvalue()
@@ -545,9 +536,7 @@ def _rewrite_entry(raw: bytes, name: str, *replacements: tuple[bytes, bytes]) ->
         assert old in content, f"{name} 里没有 {old!r}，测试前置条件失效"
         content = content.replace(old, new)
     out = BytesIO()
-    with zipfile.ZipFile(BytesIO(raw)) as source, zipfile.ZipFile(
-        out, "w", zipfile.ZIP_DEFLATED
-    ) as target:
+    with zipfile.ZipFile(BytesIO(raw)) as source, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target:
         for item in source.infolist():
             target.writestr(item.filename, content if item.filename == name else source.read(item.filename))
     return out.getvalue()
@@ -565,9 +554,7 @@ def test_xlsx_special_chars_in_sheet_names_are_decoded():
     assert loaded.df.shape == (1, 2)
 
 
-@pytest.mark.parametrize(
-    ("name", "rows"), [("Sales & Marketing", 1), ("A<B>C", 1), ('他说"好" & 报价', 1)]
-)
+@pytest.mark.parametrize(("name", "rows"), [("Sales & Marketing", 1), ("A<B>C", 1), ('他说"好" & 报价', 1)])
 def test_xlsx_special_chars_sheet_can_be_selected_by_name(name, rows):
     """显式选表要能按解码后的名字选中（多工作表切换的底层能力）。"""
     loaded = load_table("特殊表名.xlsx", _xlsx_with_special_sheet_names(), sheet=name)
@@ -593,9 +580,7 @@ def test_xlsx_raw_entity_name_is_not_accepted():
 )
 def test_xlsx_relationship_target_paths_are_resolved(old, new):
     """关系文件里的工作表路径：绝对路径和带 .. 的相对路径都要能解析到包内真实条目。"""
-    raw = _rewrite_entry(
-        _xlsx_with_special_sheet_names(), "xl/_rels/workbook.xml.rels", (old, new)
-    )
+    raw = _rewrite_entry(_xlsx_with_special_sheet_names(), "xl/_rels/workbook.xml.rels", (old, new))
     loaded = load_table("路径变体.xlsx", raw)
     assert loaded.sheet_name == "Sales & Marketing"
     assert loaded.sheet_names[0] == "Sales & Marketing"
@@ -616,13 +601,14 @@ def test_xlsx_without_dimension_still_counts_columns():
 
     entry = "xl/worksheets/sheet1.xml"
     content = zipfile.ZipFile(BytesIO(buffer.getvalue())).read(entry)
-    stripped = re.sub(rb'<dimension\b[^>]*?/>', b"", content, count=1)
+    stripped = re.sub(rb"<dimension\b[^>]*?/>", b"", content, count=1)
     assert stripped != content
 
     out = BytesIO()
-    with zipfile.ZipFile(BytesIO(buffer.getvalue())) as source, zipfile.ZipFile(
-        out, "w", zipfile.ZIP_DEFLATED
-    ) as target:
+    with (
+        zipfile.ZipFile(BytesIO(buffer.getvalue())) as source,
+        zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as target,
+    ):
         for item in source.infolist():
             target.writestr(item.filename, stripped if item.filename == entry else source.read(item.filename))
 
@@ -734,9 +720,7 @@ def test_xlsx_forged_small_dimension_cannot_hide_columns(monkeypatch):
     tampered = _tamper_dimension(to_xlsx_bytes(original), b"A1")
 
     monkeypatch.setattr(cleaning, "MAX_COLS", 2)
-    monkeypatch.setattr(
-        pd, "ExcelFile", lambda *a, **k: pytest.fail("解析前就该拒绝，ExcelFile 不该被调用")
-    )
+    monkeypatch.setattr(pd, "ExcelFile", lambda *a, **k: pytest.fail("解析前就该拒绝，ExcelFile 不该被调用"))
     with pytest.raises(TableError, match="列数") as excinfo:
         load_table("伪造列.xlsx", tampered)
     assert "3" in str(excinfo.value)  # 报的是真实列数，不是伪造的 1
@@ -804,9 +788,7 @@ def test_duplicate_rule_requires_all_columns_equal():
 
 def test_missing_only_uses_selected_columns():
     """只按所选列判空：未选中列的空值行保留，数字 0 不算空。"""
-    df = pd.DataFrame(
-        {"订单号": ["A1", "A2", "A3"], "金额": [0, None, 10], "备注": ["", "x", "y"]}
-    )
+    df = pd.DataFrame({"订单号": ["A1", "A2", "A3"], "金额": [0, None, 10], "备注": ["", "x", "y"]})
     cleaned = clean_data(df, drop_missing_in=["金额"])
     assert cleaned["订单号"].tolist() == ["A1", "A3"]
     assert len(df) == 3
@@ -833,9 +815,7 @@ def test_clean_without_options_is_a_copy():
 
 def test_dedupe_on_keeps_first_row_per_key():
     """按列去重：同一订单号的多行只留第一次出现的那行（金额可以不同）。"""
-    df = pd.DataFrame(
-        {"订单号": ["A1", "A1", "A2", "A1"], "金额": [10, 20, 30, 40]}
-    )
+    df = pd.DataFrame({"订单号": ["A1", "A1", "A2", "A1"], "金额": [10, 20, 30, 40]})
     cleaned = clean_data(df, dedupe_on=["订单号"])
 
     assert cleaned["订单号"].tolist() == ["A1", "A2"]
@@ -845,9 +825,7 @@ def test_dedupe_on_keeps_first_row_per_key():
 
 def test_dedupe_on_and_drop_duplicates_can_be_combined():
     """全行去重和按列去重可同时开：先删完全重复行，再按列留第一条。"""
-    df = pd.DataFrame(
-        {"订单号": ["A1", "A1", "A1", "A2"], "金额": [10, 10, 20, 30]}
-    )
+    df = pd.DataFrame({"订单号": ["A1", "A1", "A1", "A2"], "金额": [10, 10, 20, 30]})
     cleaned = clean_data(df, drop_duplicates=True, dedupe_on=["订单号"])
 
     assert cleaned["订单号"].tolist() == ["A1", "A2"]
@@ -873,18 +851,14 @@ def test_dedupe_on_ignores_unknown_columns():
 def test_find_suspicious_reports_spaces_and_formula_prefix():
     """可疑数据：首尾空格、= + @ 开头，只统计字符串单元格。"""
     df = pd.DataFrame({"备注": [" 加急", "=1+1", "正常", "", None], "金额": [1, 2, 3, 4, 5]})
-    assert find_suspicious(df) == {
-        "备注": {SPACE_ISSUE: 1, FORMULA_ISSUE: 1}
-    }
+    assert find_suspicious(df) == {"备注": {SPACE_ISSUE: 1, FORMULA_ISSUE: 1}}
 
 
 @pytest.mark.parametrize("dtype", [object, "string", "category"])
 def test_find_suspicious_scans_text_columns(dtype):
     """回归：object/StringDtype/Categorical 都不能漏检（pandas 2/3 判定不同）。"""
     df = pd.DataFrame({"备注": pd.Series([" 加急", "=1+1", "正常"], dtype=dtype)})
-    assert find_suspicious(df) == {
-        "备注": {SPACE_ISSUE: 1, FORMULA_ISSUE: 1}
-    }
+    assert find_suspicious(df) == {"备注": {SPACE_ISSUE: 1, FORMULA_ISSUE: 1}}
 
 
 def test_find_suspicious_catches_strings_beyond_sample_window():
@@ -910,7 +884,8 @@ def test_find_suspicious_and_export_agree_on_every_value():
     df = pd.DataFrame({"v": values})
     flagged = [value for value in values if _looks_like_formula(value)]
     shielded = [
-        value for value, out in zip(values, shield_csv_formulas(df)["v"].tolist())
+        value
+        for value, out in zip(values, shield_csv_formulas(df)["v"].tolist())
         if isinstance(out, str) and out.startswith("'")
     ]
     assert flagged == shielded
@@ -919,9 +894,7 @@ def test_find_suspicious_and_export_agree_on_every_value():
 def test_find_suspicious_handles_all_empty_text_column():
     """回归：整列都是空值时 map 出来是 str dtype，直接 sum() 会得到 '' 并崩溃。"""
     for dtype in ("string", "str", object):
-        df = pd.DataFrame(
-            {"备注": pd.Series([None, None], dtype=dtype), "金额": [1, 2]}
-        )
+        df = pd.DataFrame({"备注": pd.Series([None, None], dtype=dtype), "金额": [1, 2]})
         assert find_suspicious(df) == {}
 
 
@@ -932,9 +905,7 @@ def test_find_suspicious_skips_object_numeric_columns():
 
     mixed = pd.Series([1.0] * 1000 + [" =1+1"], dtype=object)
     assert _is_text_column(mixed) is True
-    assert find_suspicious(pd.DataFrame({"v": mixed})) == {
-        "v": {SPACE_ISSUE: 1, FORMULA_ISSUE: 1}
-    }
+    assert find_suspicious(pd.DataFrame({"v": mixed})) == {"v": {SPACE_ISSUE: 1, FORMULA_ISSUE: 1}}
 
 
 def test_find_suspicious_skips_non_text_columns_quickly():
@@ -1017,9 +988,7 @@ def test_shield_csv_formulas_handles_invisible_prefixes():
 
 def test_shield_csv_formulas_keeps_numbers_and_normal_text():
     """纯数字（含负数）和正常文本不能被误伤。"""
-    df = pd.DataFrame(
-        {"值": ["-5", "+5", "1e3", "-1.5", "-5 ", "00123", "正常", "-1e3", "-1,000", "-.5"]}
-    )
+    df = pd.DataFrame({"值": ["-5", "+5", "1e3", "-1.5", "-5 ", "00123", "正常", "-1e3", "-1,000", "-.5"]})
     assert shield_csv_formulas(df)["值"].tolist() == df["值"].tolist()
 
     numbers = pd.DataFrame({"n": [0, -5, 1.5, None]})
@@ -1087,9 +1056,7 @@ def test_export_xlsx_keeps_formula_like_text_as_text():
 
 def test_export_xlsx_does_not_mutate_normal_data():
     """数据完整性：XLSX 往返后编号、负数、文本（含尾随空格）都不变。"""
-    normal = pd.DataFrame(
-        {"编号": ["00123", "A002"], "金额": [-5, 0], "文本": ["正常", "带空格 "]}
-    )
+    normal = pd.DataFrame({"编号": ["00123", "A002"], "金额": [-5, 0], "文本": ["正常", "带空格 "]})
     raw = to_xlsx_bytes(normal)
 
     workbook = openpyxl.load_workbook(BytesIO(raw), data_only=False)

@@ -16,8 +16,7 @@ from .errors import TableError
 from .limits import Limits, check_shape_limits, current_limits, raise_shape_limit
 
 XLSX_ONE_SHEET_HINT = (
-    "本次只读取这一张工作表，其他工作表不读取（也不限额）；"
-    "请拆分这张表，或用 Excel 删减行列后再上传。"
+    "本次只读取这一张工作表，其他工作表不读取（也不限额）；请拆分这张表，或用 Excel 删减行列后再上传。"
 )
 
 _COL_LETTERS_RE = re.compile(rb'<c r="([A-Z]+)\d+"')
@@ -43,9 +42,7 @@ def check_xlsx_uncompressed_size(data: bytes, limits: Limits | None = None) -> N
         with zipfile.ZipFile(BytesIO(data)) as archive:
             total = sum(entry.file_size for entry in archive.infolist())
     except (zipfile.BadZipFile, OSError) as exc:
-        raise TableError(
-            "XLSX 无法打开：文件可能已损坏，或者其实是改了扩展名的其他文件。"
-        ) from exc
+        raise TableError("XLSX 无法打开：文件可能已损坏，或者其实是改了扩展名的其他文件。") from exc
     if total > lim.max_xlsx_uncompressed_bytes:
         total_mb = total / 1024 / 1024
         limit_mb = lim.max_xlsx_uncompressed_mb
@@ -185,9 +182,7 @@ def scan_part(
     lim = limits or current_limits()
     source = f"这份 XLSX 的工作表「{label}」（{part.rsplit('/', 1)[-1]}，文件共 {total} 个工作表）"
     with archive.open(part) as stream:  # 只读需要的字节，不整个读进内存
-        rows, cols = scan_xlsx_sheet(
-            stream, source, XLSX_ONE_SHEET_HINT, lim, header_rows
-        )
+        rows, cols = scan_xlsx_sheet(stream, source, XLSX_ONE_SHEET_HINT, lim, header_rows)
     data_rows = max(rows - header_rows, 0)
     check_shape_limits(data_rows, cols, source, XLSX_ONE_SHEET_HINT, lim)
     return rows, cols
@@ -229,34 +224,23 @@ def pick_xlsx_sheet(
             # 按目录前缀筛会把它当工作表，表数和序号都会错）；拿不到映射再退回目录筛选。
             names = xlsx_sheet_names(archive)
             present = set(archive.namelist())
-            parts = [
-                n for n in names if n.startswith("xl/worksheets/") and n in present
-            ] or sorted(
-                n
-                for n in present
-                if n.startswith("xl/worksheets/") and "/_rels/" not in n and n.endswith(".xml")
+            parts = [n for n in names if n.startswith("xl/worksheets/") and n in present] or sorted(
+                n for n in present if n.startswith("xl/worksheets/") and "/_rels/" not in n and n.endswith(".xml")
             )
             if not parts:
                 return (), (), 0, ()  # 包结构不像 XLSX：交给后面的解析报「无法打开」
-            labels = tuple(
-                names.get(part) or f"第 {index} 个工作表"
-                for index, part in enumerate(parts, 1)
-            )
+            labels = tuple(names.get(part) or f"第 {index} 个工作表" for index, part in enumerate(parts, 1))
             total = len(parts)
             if sheet is not None:
                 if sheet not in labels:
-                    raise TableError(
-                        f"工作簿里没有名为「{sheet}」的工作表，可选：{'、'.join(labels)}。"
-                    )
+                    raise TableError(f"工作簿里没有名为「{sheet}」的工作表，可选：{'、'.join(labels)}。")
                 targets: range | list[int] = [labels.index(sheet)]
             else:
                 targets = range(total)
             skipped: list[tuple[str, str]] = []
             for index in targets:
                 try:
-                    rows, _ = scan_part(
-                        archive, parts[index], labels[index], total, lim, header_rows
-                    )
+                    rows, _ = scan_part(archive, parts[index], labels[index], total, lim, header_rows)
                 except TableError as exc:
                     if sheet is not None:
                         raise  # 用户点名要的表，超限必须照实报错
@@ -268,8 +252,7 @@ def pick_xlsx_sheet(
             if skipped:
                 detail = "；".join(f"「{label}」{reason}" for label, reason in skipped)
                 raise TableError(
-                    f"这个文件的每张工作表都超过了单表上限：{detail}。"
-                    "请拆分文件，或先用 Excel 删掉用不到的表再上传。"
+                    f"这个文件的每张工作表都超过了单表上限：{detail}。请拆分文件，或先用 Excel 删掉用不到的表再上传。"
                 )
             hint = (
                 f"当前「表头在第几行」是第 {header_rows} 行，如果表头没这么靠下，把它调小再试。"

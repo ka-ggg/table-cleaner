@@ -15,11 +15,10 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
+import cleaning
 import openpyxl
 import pandas as pd
 import pytest
-
-import cleaning
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -33,12 +32,8 @@ def two_sheet_xlsx() -> bytes:
     """双工作表：订单（3 行，含 1 行重复）、客户（2 行）。"""
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        pd.DataFrame({"编号": ["A1", "A1", "A2"], "金额": [1, 1, 2]}).to_excel(
-            writer, index=False, sheet_name="订单"
-        )
-        pd.DataFrame({"编号": ["B1", "B2"], "金额": [3, 4]}).to_excel(
-            writer, index=False, sheet_name="客户"
-        )
+        pd.DataFrame({"编号": ["A1", "A1", "A2"], "金额": [1, 1, 2]}).to_excel(writer, index=False, sheet_name="订单")
+        pd.DataFrame({"编号": ["B1", "B2"], "金额": [3, 4]}).to_excel(writer, index=False, sheet_name="客户")
     return buffer.getvalue()
 
 
@@ -99,9 +94,9 @@ def test_xlsx_header_row_second_row():
     """XLSX 第 2 行作表头（第 1 行是标题）。"""
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        pd.DataFrame(
-            [["盘点表", None], ["编号", "金额"], ["A1", 10], ["A2", 20]]
-        ).to_excel(writer, index=False, header=False)
+        pd.DataFrame([["盘点表", None], ["编号", "金额"], ["A1", 10], ["A2", 20]]).to_excel(
+            writer, index=False, header=False
+        )
     loaded = cleaning.load_table("盘点.xlsx", buffer.getvalue(), header_row=2)
     assert list(loaded.df.columns) == ["编号", "金额"]
     assert loaded.df["编号"].tolist() == ["A1", "A2"]
@@ -233,15 +228,9 @@ def test_load_csv_timeout_raises_chinese():
 
 def test_chunked_clean_matches_whole_table():
     """分块清洗的结果、步骤计数、被删样例必须和整表一次算完全一致。"""
-    df = pd.DataFrame(
-        {"订单号": ["A1", "A1", "A2", "A2", "A3"], "金额": [1, 1, 2, 2, 3]}
-    )
-    whole = cleaning.clean_report(
-        df, drop_duplicates=True, dedupe_on=["订单号"], sample=3
-    )
-    chunked = cleaning.clean_report(
-        df, drop_duplicates=True, dedupe_on=["订单号"], sample=3, chunk_rows=2
-    )
+    df = pd.DataFrame({"订单号": ["A1", "A1", "A2", "A2", "A3"], "金额": [1, 1, 2, 2, 3]})
+    whole = cleaning.clean_report(df, drop_duplicates=True, dedupe_on=["订单号"], sample=3)
+    chunked = cleaning.clean_report(df, drop_duplicates=True, dedupe_on=["订单号"], sample=3, chunk_rows=2)
     assert whole.df.equals(chunked.df)
     assert whole.steps == chunked.steps == {"删除完全重复的行": 2, "按指定列去重": 0}
     assert whole.removed.equals(chunked.removed)
@@ -337,9 +326,7 @@ def test_xlsx_number_mode_number_converts_and_keeps_text():
 
 
 def test_xlsx_number_mode_still_shields_formulas():
-    raw = cleaning.to_xlsx_bytes(
-        pd.DataFrame({"备注": ["=1+1"]}), number_mode="number"
-    )
+    raw = cleaning.to_xlsx_bytes(pd.DataFrame({"备注": ["=1+1"]}), number_mode="number")
     sheet = openpyxl.load_workbook(BytesIO(raw)).active
     assert sheet["A2"].value == "=1+1"
     assert sheet["A2"].data_type == "s"
@@ -354,16 +341,12 @@ def test_unknown_number_mode_raises():
 
 
 def test_timestamped_name_has_original_stem_and_time():
-    name = cleaning.timestamped_name(
-        "我的订单.xlsx", "csv", now=datetime(2024, 5, 1, 12, 30, 5)
-    )
+    name = cleaning.timestamped_name("我的订单.xlsx", "csv", now=datetime(2024, 5, 1, 12, 30, 5))
     assert name == "清洗后_我的订单_20240501-123005.csv"
 
 
 def test_timestamped_name_sanitizes_paths_and_bad_chars():
-    name = cleaning.timestamped_name(
-        "../../客户:表.xlsx", "xlsx", now=datetime(2024, 1, 2, 3, 4, 5)
-    )
+    name = cleaning.timestamped_name("../../客户:表.xlsx", "xlsx", now=datetime(2024, 1, 2, 3, 4, 5))
     assert "/" not in name and ":" not in name
     assert name.startswith("清洗后_") and name.endswith(".xlsx")
 
@@ -394,21 +377,15 @@ def test_build_zip_roundtrip_with_duplicate_names():
 
 def test_rename_drop_and_reorder():
     df = pd.DataFrame({"金额": [1], "备注": ["x"], "编号": ["A1"]})
-    ops = cleaning.ColumnOps(
-        rename=(("金额", "总金额"),), drop=("备注",), order=("编号",)
-    )
+    ops = cleaning.ColumnOps(rename=(("金额", "总金额"),), drop=("备注",), order=("编号",))
     out, notes = cleaning.apply_transforms(df, ops)
     assert list(out.columns) == ["编号", "总金额"]
     assert notes == []
 
 
 def test_type_conversion_keeps_failures_and_notes():
-    df = pd.DataFrame(
-        {"金额": ["100", "约三百"], "日期": ["2024-05-01", "不是日期"]}
-    )
-    out, notes = cleaning.apply_transforms(
-        df, cleaning.ColumnOps(to_number=("金额",), to_date=("日期",))
-    )
+    df = pd.DataFrame({"金额": ["100", "约三百"], "日期": ["2024-05-01", "不是日期"]})
+    out, notes = cleaning.apply_transforms(df, cleaning.ColumnOps(to_number=("金额",), to_date=("日期",)))
     assert out["金额"].tolist()[0] == 100
     assert out["金额"].tolist()[1] == "约三百"
     assert str(out["日期"].tolist()[0]).startswith("2024-05-01")
@@ -463,27 +440,21 @@ def test_safe_eval_handles_brackets_and_fullwidth():
 
 def test_safe_eval_division_by_zero_leaves_blank():
     df = pd.DataFrame({"a": [1.0], "b": [0.0]})
-    out, notes = cleaning.apply_transforms(
-        df, cleaning.ColumnOps(computed=(("比值", "a/b"),))
-    )
+    out, notes = cleaning.apply_transforms(df, cleaning.ColumnOps(computed=(("比值", "a/b"),)))
     assert pd.isna(out.loc[0, "比值"])
     assert any("除以 0" in note for note in notes)
 
 
 def test_computed_column_with_unknown_column_is_reported():
     df = pd.DataFrame({"a": [1]})
-    out, notes = cleaning.apply_transforms(
-        df, cleaning.ColumnOps(computed=(("b", "不存在的列*2"),))
-    )
+    out, notes = cleaning.apply_transforms(df, cleaning.ColumnOps(computed=(("b", "不存在的列*2"),)))
     assert "b" not in out.columns
     assert any("不存在的列" in note for note in notes)
 
 
 def test_transform_rename_conflict_is_skipped_with_note():
     df = pd.DataFrame({"金额": [1], "总金额": [2]})
-    out, notes = cleaning.apply_transforms(
-        df, cleaning.ColumnOps(rename=(("金额", "总金额"),))
-    )
+    out, notes = cleaning.apply_transforms(df, cleaning.ColumnOps(rename=(("金额", "总金额"),)))
     assert list(out.columns) == ["金额", "总金额"]
     assert any("已经存在" in note for note in notes)
 
@@ -520,9 +491,7 @@ def test_parse_names_keeps_order_and_dedupes():
 
 def test_clean_table_applies_row_rules_then_columns():
     df = pd.DataFrame({"编号": ["A1", "A1", "A2"], "金额": [1, 1, 2]})
-    options = cleaning.CleanOptions(
-        drop_duplicates=True, columns=cleaning.ColumnOps(rename=(("金额", "总金额"),))
-    )
+    options = cleaning.CleanOptions(drop_duplicates=True, columns=cleaning.ColumnOps(rename=(("金额", "总金额"),)))
     report = cleaning.clean_table(df, options)
     assert report.steps == {"删除完全重复的行": 1}
     assert list(report.df.columns) == ["编号", "总金额"]
@@ -584,9 +553,7 @@ def test_template_filter_drops_unknown_columns():
             "计算列": [["总额", "单价*数量"]],
         }
     )
-    filtered, notes = cleaning.filter_for_columns(
-        rules, ["订单号", "金额", "单价", "数量"]
-    )
+    filtered, notes = cleaning.filter_for_columns(rules, ["订单号", "金额", "单价", "数量"])
     assert filtered["按列去重"] == ["订单号"]
     assert filtered["列重命名"] == [["金额", "总金额"]]
     assert filtered["计算列"] == [["总额", "单价*数量"]]  # 表达式在执行阶段再提示
@@ -594,9 +561,7 @@ def test_template_filter_drops_unknown_columns():
 
 
 def test_template_text_helpers():
-    rules = cleaning.normalize_rules(
-        {"列重命名": [["金额", "总金额"]], "计算列": [["总额", "单价*数量"]]}
-    )
+    rules = cleaning.normalize_rules({"列重命名": [["金额", "总金额"]], "计算列": [["总额", "单价*数量"]]})
     assert cleaning.rules_to_rename_text(rules) == "金额=总金额"
     assert cleaning.rules_to_computed_text(rules) == "总额=单价*数量"
 
@@ -629,9 +594,7 @@ def test_batch_multi_sheet_zip_contains_each_sheet():
     assert report.exported == 2
     assert [item.entry for item in report.items] == ["多表_订单.csv", "多表_客户.csv"]
     with zipfile.ZipFile(BytesIO(report.zip_bytes)) as archive:
-        back = pd.read_csv(
-            BytesIO(archive.read("多表_订单.csv")), dtype=str, keep_default_na=False
-        )
+        back = pd.read_csv(BytesIO(archive.read("多表_订单.csv")), dtype=str, keep_default_na=False)
     assert back.shape == (2, 2)
     assert back["编号"].tolist() == ["A1", "A2"]
 
@@ -649,18 +612,14 @@ def test_batch_isolates_single_item_errors():
 
 
 def test_batch_all_failed_returns_no_zip():
-    report = cleaning.run_batch(
-        [cleaning.BatchJob("坏.csv", None, b"")], cleaning.CleanOptions()
-    )
+    report = cleaning.run_batch([cleaning.BatchJob("坏.csv", None, b"")], cleaning.CleanOptions())
     assert report.zip_bytes is None
     assert report.exported == 0
 
 
 def test_batch_xlsx_format_and_number_mode():
     jobs = [cleaning.BatchJob("订单.xlsx", "订单", two_sheet_xlsx())]
-    report = cleaning.run_batch(
-        jobs, cleaning.CleanOptions(), export_format="xlsx", number_mode="number"
-    )
+    report = cleaning.run_batch(jobs, cleaning.CleanOptions(), export_format="xlsx", number_mode="number")
     with zipfile.ZipFile(BytesIO(report.zip_bytes)) as archive:
         assert archive.namelist() == ["订单_订单.xlsx"]
         back = pd.read_excel(BytesIO(archive.read(archive.namelist()[0])))
@@ -673,9 +632,7 @@ def test_batch_applies_header_row_and_rules():
     options = cleaning.CleanOptions(header_row=2, drop_duplicates=True)
     report = cleaning.run_batch(jobs, options)
     with zipfile.ZipFile(BytesIO(report.zip_bytes)) as archive:
-        back = pd.read_csv(
-            BytesIO(archive.read("报表.csv")), dtype=str, keep_default_na=False
-        )
+        back = pd.read_csv(BytesIO(archive.read("报表.csv")), dtype=str, keep_default_na=False)
     assert back.shape == (1, 2)
 
 

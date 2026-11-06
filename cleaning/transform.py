@@ -86,14 +86,7 @@ class ColumnOps:
     computed: tuple[tuple[str, str], ...] = ()  # (新列名, 表达式)
 
     def is_empty(self) -> bool:
-        return not (
-            self.rename
-            or self.drop
-            or self.order
-            or self.to_number
-            or self.to_date
-            or self.computed
-        )
+        return not (self.rename or self.drop or self.order or self.to_number or self.to_date or self.computed)
 
 
 @dataclass(frozen=True)
@@ -121,14 +114,10 @@ def parse_pairs(text: str, example: str = "旧列名=新列名") -> tuple[tuple[
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
-            raise TableError(
-                f"第 {lineno} 行「{line}」缺少等号，格式应为「{example}」。"
-            )
+            raise TableError(f"第 {lineno} 行「{line}」缺少等号，格式应为「{example}」。")
         old, new = (part.strip() for part in line.split("=", 1))
         if not old or not new:
-            raise TableError(
-                f"第 {lineno} 行等号两边有空的，格式应为「{example}」。"
-            )
+            raise TableError(f"第 {lineno} 行等号两边有空的，格式应为「{example}」。")
         pairs.append((old, new))
     return tuple(pairs)
 
@@ -167,9 +156,7 @@ def numeric_series(series: pd.Series) -> pd.Series:
             # 用 float64（Excel/XLSX 真正存数字用的精度）当判据，而不是 int64 的精确值：
             # 一整列都是整齐整数时 pandas 会给出精确的 Int64，守卫若按 int64 比就会放行，
             # 导出的 XLSX 里 18 位身份证号仍会被四舍五入成同一个值。
-            keep[position] = Decimal(text.iloc[position]) == Decimal(
-                repr(float(numeric.iloc[position]))
-            )
+            keep[position] = Decimal(text.iloc[position]) == Decimal(repr(float(numeric.iloc[position])))
         except (InvalidOperation, ValueError):
             keep[position] = False
     return numeric.where(pd.Series(keep, index=numeric.index))
@@ -194,11 +181,7 @@ def _tidy_numbers(numeric: pd.Series) -> pd.Series:
 
 def _tidy_object_numbers(values: pd.Series) -> pd.Series:
     """混合列（数字 + 原文）里的整数值也写成 int，别显示成 123.0。"""
-    return values.map(
-        lambda value: int(value)
-        if isinstance(value, float) and value.is_integer()
-        else value
-    )
+    return values.map(lambda value: int(value) if isinstance(value, float) and value.is_integer() else value)
 
 
 def convert_to_number(series: pd.Series) -> tuple[pd.Series, int]:
@@ -276,9 +259,7 @@ def _eval_node(node: ast.AST, df: pd.DataFrame, aliases: dict[str, str]) -> obje
     if isinstance(node, ast.Constant):
         if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             return node.value
-        raise TableError(
-            "计算表达式里只能用数字，不能用文字或其他常量；请只写列名、数字和四则运算。"
-        )
+        raise TableError("计算表达式里只能用数字，不能用文字或其他常量；请只写列名、数字和四则运算。")
     if isinstance(node, ast.Name):
         name = aliases.get(node.id, node.id)
         if name not in df.columns:
@@ -292,27 +273,19 @@ def _eval_node(node: ast.AST, df: pd.DataFrame, aliases: dict[str, str]) -> obje
     if isinstance(node, ast.BinOp):
         func = _ALLOWED_BINOPS.get(type(node.op))
         if func is None:
-            raise TableError(
-                "计算表达式只支持 + - * / // % ** 这几种运算，"
-                "不支持位运算、比较或字符串拼接。"
-            )
-        return func(
-            _eval_node(node.left, df, aliases), _eval_node(node.right, df, aliases)
-        )
+            raise TableError("计算表达式只支持 + - * / // % ** 这几种运算，不支持位运算、比较或字符串拼接。")
+        return func(_eval_node(node.left, df, aliases), _eval_node(node.right, df, aliases))
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         value = _eval_node(node.operand, df, aliases)
         return value if isinstance(node.op, ast.UAdd) else -value
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name) or node.func.id not in _ALLOWED_FUNCS:
             raise TableError(
-                "计算表达式里只支持 round() 和 abs() 两个函数；"
-                "其他函数、属性访问（点号）和下标都不允许执行。"
+                "计算表达式里只支持 round() 和 abs() 两个函数；其他函数、属性访问（点号）和下标都不允许执行。"
             )
         if node.keywords:
             raise TableError("计算表达式里的函数不支持关键字参数，例如 round(金额, 2) 这样写。")
-        return _ALLOWED_FUNCS[node.func.id](
-            *[_eval_node(arg, df, aliases) for arg in node.args]
-        )
+        return _ALLOWED_FUNCS[node.func.id](*[_eval_node(arg, df, aliases) for arg in node.args])
     raise TableError(
         "计算表达式里有不支持的写法；只允许列名、数字、+ - * / // % ** 和 round()/abs()，"
         "不能写代码、函数定义或访问属性。"
@@ -330,9 +303,7 @@ def safe_eval(expr: str, df: pd.DataFrame) -> pd.Series:
     if not text:
         raise TableError("计算表达式是空的，请写成例如「金额=单价*数量」。")
     if len(text) > _MAX_EXPRESSION_CHARS:
-        raise TableError(
-            f"计算表达式太长（超过 {_MAX_EXPRESSION_CHARS} 个字符），请拆成多列计算。"
-        )
+        raise TableError(f"计算表达式太长（超过 {_MAX_EXPRESSION_CHARS} 个字符），请拆成多列计算。")
     # [列名] /【列名】先换成安全的占位符，这样带空格、括号的列名也能参与计算
     aliases: dict[str, str] = {}
 
@@ -361,9 +332,7 @@ def safe_eval(expr: str, df: pd.DataFrame) -> pd.Series:
     return pd.Series(value, index=df.index)
 
 
-def add_computed_column(
-    df: pd.DataFrame, name: str, expr: str, notes: list[str]
-) -> pd.DataFrame:
+def add_computed_column(df: pd.DataFrame, name: str, expr: str, notes: list[str]) -> pd.DataFrame:
     """加一列计算结果；算不出来就记一条说明并跳过这一列，不影响其他列。"""
     if not name:
         notes.append(f"计算列里有空列名，已跳过（表达式「{expr}」）。")
@@ -377,18 +346,12 @@ def add_computed_column(
         notes.append(f"计算列「{name}」没有生成：{exc}")
         return df
     except Exception as exc:  # 除以 0、文本参与乘法等
-        notes.append(
-            f"计算列「{name}」没有生成：表达式「{expr}」算不出来（{exc}）；"
-            "请确认参与计算的列都是数字。"
-        )
+        notes.append(f"计算列「{name}」没有生成：表达式「{expr}」算不出来（{exc}）；请确认参与计算的列都是数字。")
         return df
     infinities = int((result == float("inf")).sum() + (result == float("-inf")).sum())
     if infinities:
         result = result.replace([float("inf"), float("-inf")], pd.NA)
-        notes.append(
-            f"计算列「{name}」有 {infinities} 个单元格的结果是无穷大（除以 0 或数字太大），"
-            "已留空。"
-        )
+        notes.append(f"计算列「{name}」有 {infinities} 个单元格的结果是无穷大（除以 0 或数字太大），已留空。")
     result = _tidy_numbers(result)  # 4.0 → 4：浮点算完把整数值显示回整数
     out = df.copy()
     out[name] = result
@@ -398,9 +361,7 @@ def add_computed_column(
 # ---------------------------------------------------------------- 一起应用
 
 
-def _conversion_failures(
-    series: pd.Series, label: str, failed: int, hint: str
-) -> str:
+def _conversion_failures(series: pd.Series, label: str, failed: int, hint: str) -> str:
     """转换失败时的提示：给出个数和最多两个原文样例，用户知道该改哪一格。"""
     sample = _examples(series, series.map(lambda value: isinstance(value, str)), 2)
     return (
@@ -439,11 +400,7 @@ def apply_transforms(df: pd.DataFrame, ops: ColumnOps) -> tuple[pd.DataFrame, li
         out = out.copy()
         out[column] = converted
         if failed:
-            notes.append(
-                _conversion_failures(
-                    out[column], "转数字", failed, "；需要的话请手工修正这些格子。"
-                )
-            )
+            notes.append(_conversion_failures(out[column], "转数字", failed, "；需要的话请手工修正这些格子。"))
     for column in ops.to_date:
         if column not in out.columns:
             notes.append(f"要转日期的列「{column}」不存在，已忽略。")

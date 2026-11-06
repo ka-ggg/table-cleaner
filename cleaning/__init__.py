@@ -27,7 +27,40 @@ from __future__ import annotations
 
 __version__ = "2.0.1"
 
+from .batch import BatchItem, BatchJob, BatchReport, run_batch
 from .errors import Deadline, TableError
+from .export import (
+    FORMULA_MODE_LABELS,
+    FORMULA_MODES,
+    NUMBER_MODE_LABELS,
+    NUMBER_MODES,
+    build_zip,
+    entry_name,
+    numbers_where_possible,
+    safe_stem,
+    shield_csv_formulas,
+    timestamped_name,
+    to_csv_bytes,
+    to_xlsx_bytes,
+    unique_names,
+)
+from .io import (
+    ALLOWED_EXTS,
+    CSV_DELIMITERS,
+    LoadedTable,
+    load_table,
+)
+
+# 兼容旧路径：老脚本/旧测试里直接调用的私有函数
+from .io import (
+    _detect_delimiter as _detect_delimiter,
+)
+from .io import (
+    _estimate_csv_shape as _estimate_csv_shape,
+)
+from .io import (
+    _normalize_headers as _normalize_headers,
+)
 from .limits import (
     CHUNK_ROWS,
     CHUNK_THRESHOLD_ROWS,
@@ -44,21 +77,8 @@ from .limits import (
     current_limits,
     raise_shape_limit,
 )
-from .xlsx_scan import (
-    XLSX_ONE_SHEET_HINT,
-    check_xlsx_uncompressed_size,
-    count_data_merges,
-    limit_reason,
-    pick_xlsx_sheet,
-    scan_part,
-    scan_xlsx_sheet,
-    xlsx_sheet_names,
-)
-from .io import (
-    ALLOWED_EXTS,
-    CSV_DELIMITERS,
-    LoadedTable,
-    load_table,
+from .rules import (
+    _PLAIN_NUMBER_RE as _PLAIN_NUMBER_RE,
 )
 from .rules import (
     DUPLICATE_RULE,
@@ -73,36 +93,12 @@ from .rules import (
     make_sample_df,
     missing_mask,
     summarize,
+)
+from .rules import (
     _is_text_column as _is_text_column,  # 旧脚本直接调用这些私有函数，保留重导出
+)
+from .rules import (
     _looks_like_formula as _looks_like_formula,
-    _PLAIN_NUMBER_RE as _PLAIN_NUMBER_RE,
-)
-from .transform import (
-    CleanOptions,
-    ColumnOps,
-    apply_transforms,
-    clean_table,
-    convert_to_date,
-    convert_to_number,
-    numeric_series,
-    parse_names,
-    parse_pairs,
-    safe_eval,
-)
-from .export import (
-    FORMULA_MODE_LABELS,
-    FORMULA_MODES,
-    NUMBER_MODE_LABELS,
-    NUMBER_MODES,
-    build_zip,
-    entry_name,
-    numbers_where_possible,
-    safe_stem,
-    shield_csv_formulas,
-    timestamped_name,
-    to_csv_bytes,
-    to_xlsx_bytes,
-    unique_names,
 )
 from .templates import (
     TEMPLATE_TOOL,
@@ -116,12 +112,27 @@ from .templates import (
     rules_to_rename_text,
     summarize_rules,
 )
-from .batch import BatchItem, BatchJob, BatchReport, run_batch
-# 兼容旧路径：老脚本/旧测试里直接调用的私有函数
-from .io import (
-    _detect_delimiter as _detect_delimiter,
-    _estimate_csv_shape as _estimate_csv_shape,
-    _normalize_headers as _normalize_headers,
+from .transform import (
+    CleanOptions,
+    ColumnOps,
+    apply_transforms,
+    clean_table,
+    convert_to_date,
+    convert_to_number,
+    numeric_series,
+    parse_names,
+    parse_pairs,
+    safe_eval,
+)
+from .xlsx_scan import (
+    XLSX_ONE_SHEET_HINT,
+    check_xlsx_uncompressed_size,
+    count_data_merges,
+    limit_reason,
+    pick_xlsx_sheet,
+    scan_part,
+    scan_xlsx_sheet,
+    xlsx_sheet_names,
 )
 
 __all__ = [

@@ -47,9 +47,7 @@ def _normalize_mode(mode: bool | str | None) -> str:
     text = str(mode).strip().lower()
     if text in FORMULA_MODES:
         return text
-    raise TableError(
-        f"导出防护模式「{mode}」不认识；可选：quote（单引号）、zwsp（零宽空格）、off（关闭）。"
-    )
+    raise TableError(f"导出防护模式「{mode}」不认识；可选：quote（单引号）、zwsp（零宽空格）、off（关闭）。")
 
 
 def _shield_cell(value: object, mode: str) -> object:
@@ -116,9 +114,7 @@ def numbers_where_possible(df: pd.DataFrame) -> pd.DataFrame:
         if not bool(converted.any()):
             continue
         tidy = numeric.astype(object).map(
-            lambda value: int(value)
-            if isinstance(value, float) and value.is_integer()
-            else value
+            lambda value: int(value) if isinstance(value, float) and value.is_integer() else value
         )
         out[column] = series.astype(object).where(~converted, tidy)
     return out
@@ -133,13 +129,9 @@ def to_xlsx_bytes(df: pd.DataFrame, number_mode: str = "text") -> bytes:
     """
     mode = str(number_mode or "text").strip().lower()
     if mode not in NUMBER_MODES:
-        raise TableError(
-            f"编号导出模式「{number_mode}」不认识；可选：text（强制文本）、number（尝试转数字）。"
-        )
+        raise TableError(f"编号导出模式「{number_mode}」不认识；可选：text（强制文本）、number（尝试转数字）。")
     if len(df) > EXCEL_MAX_ROWS - 1 or df.shape[1] > EXCEL_MAX_COLS:
-        raise TableError(
-            "数据超出了 Excel 的上限（1048576 行 / 16384 列，含表头），请改用 CSV 下载。"
-        )
+        raise TableError("数据超出了 Excel 的上限（1048576 行 / 16384 列，含表头），请改用 CSV 下载。")
     out = numbers_where_possible(df) if mode == "number" else df
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
@@ -167,9 +159,7 @@ def safe_stem(name: str) -> str:
     return stem[:60] or "表格"
 
 
-def timestamped_name(
-    original: str, ext: str, prefix: str = "清洗后", now: datetime | None = None
-) -> str:
+def timestamped_name(original: str, ext: str, prefix: str = "清洗后", now: datetime | None = None) -> str:
     """下载文件名：前缀 + 原文件名 + 时间戳，避免连续导出互相覆盖。"""
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
     return f"{prefix}_{safe_stem(original)}_{stamp}.{ext.lstrip('.')}"

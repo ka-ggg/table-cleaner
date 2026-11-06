@@ -12,12 +12,10 @@ from __future__ import annotations
 
 import io
 
+import cleaning
 import openpyxl
 import pandas as pd
 import pytest
-
-import cleaning
-
 
 # ---------------------------------------------------------------- 1. 计算列指数爆炸
 
@@ -43,9 +41,7 @@ def test_reasonable_exponents_still_work():
 def test_pow_blowup_does_not_freeze_clean_table():
     """走完整 clean_table 也不挂死：算不出来就记一条说明、跳过这一列。"""
     df = pd.DataFrame({"a": [1, 2]})
-    report = cleaning.clean_table(
-        df, cleaning.CleanOptions(columns=cleaning.ColumnOps(computed=(("b", "9**9**9"),)))
-    )
+    report = cleaning.clean_table(df, cleaning.CleanOptions(columns=cleaning.ColumnOps(computed=(("b", "9**9**9"),))))
     assert "b" not in report.df.columns
     assert any("结果太大" in note for note in report.notes)
 

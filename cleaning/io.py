@@ -129,27 +129,21 @@ def _estimate_csv_shape(
 
 def _csv_header_too_large(header_row: int) -> TableError:
     return TableError(
-        f"CSV 里找不到第 {header_row} 行可作表头（文件可能比这更短）；"
-        "请把「表头在第几行」改小，或确认选对了文件。"
+        f"CSV 里找不到第 {header_row} 行可作表头（文件可能比这更短）；请把「表头在第几行」改小，或确认选对了文件。"
     )
 
 
-def _read_csv(
-    data: bytes, header_row: int, deadline: Deadline, limits: Limits
-) -> LoadedTable:
+def _read_csv(data: bytes, header_row: int, deadline: Deadline, limits: Limits) -> LoadedTable:
     if b"\x00" in data:
         raise TableError(
-            "文件里有二进制内容或使用了不支持的编码，无法按文本读取；"
-            "请用 Excel 另存为「CSV UTF-8」后重试。"
+            "文件里有二进制内容或使用了不支持的编码，无法按文本读取；请用 Excel 另存为「CSV UTF-8」后重试。"
         )
     notes: list[str] = []
     for encoding in ("utf-8-sig", "gb18030"):
         text = data.decode(encoding, errors="ignore")
         delimiter = _detect_delimiter(text)
         # 先按行数和表头列数预检，超限的文件不进入 read_csv，避免先占满内存
-        estimate = _estimate_csv_shape(
-            data, encoding, delimiter, header_row, limits, deadline
-        )
+        estimate = _estimate_csv_shape(data, encoding, delimiter, header_row, limits, deadline)
         if estimate is not None:
             check_shape_limits(*estimate, "文件", limits=limits)
         deadline.check("读取 CSV")
@@ -171,9 +165,7 @@ def _read_csv(
         except pd.errors.ParserError as exc:
             if "Passed header=" in str(exc):  # 表头行比文件还靠下
                 raise _csv_header_too_large(header_row) from None
-            raise TableError(
-                f"CSV 格式无法解析，请检查是否用{CSV_DELIMITERS[delimiter]}分隔、引号是否成对。"
-            ) from exc
+            raise TableError(f"CSV 格式无法解析，请检查是否用{CSV_DELIMITERS[delimiter]}分隔、引号是否成对。") from exc
         if header_row > 1:
             notes.append(
                 f"已把第 {header_row} 行作为表头，上面 {header_row - 1} 行已忽略；"
@@ -216,22 +208,16 @@ def _read_xlsx(
     try:
         check_xlsx_uncompressed_size(data, limits)
         deadline.check("预检 XLSX")
-        labels, parts, index, skipped = pick_xlsx_sheet(
-            data, sheet, limits, header_rows=header_row
-        )
+        labels, parts, index, skipped = pick_xlsx_sheet(data, sheet, limits, header_rows=header_row)
         if not labels:
-            raise TableError(
-                "XLSX 无法打开：文件里没有可读取的工作表，请用 Excel 另存为 .xlsx 后重试。"
-            )
+            raise TableError("XLSX 无法打开：文件里没有可读取的工作表，请用 Excel 另存为 .xlsx 后重试。")
         book = pd.ExcelFile(BytesIO(data), engine="openpyxl")
         merged = 0
         with zipfile.ZipFile(BytesIO(data)) as archive:
             while True:
                 chosen = labels[index]  # 按名字定位：序号不可靠（工作簿里可能有 chart sheet）
                 if chosen not in book.sheet_names:  # 包结构异常时 pandas 看不到这张表
-                    raise TableError(
-                        f"XLSX 无法打开：找不到要读取的工作表「{chosen}」，请用 Excel 另存后重试。"
-                    )
+                    raise TableError(f"XLSX 无法打开：找不到要读取的工作表「{chosen}」，请用 Excel 另存后重试。")
                 deadline.check(f"读取工作表「{chosen}」")
                 # keep_default_na=False：单元格里写的 "NA" 是文字，不能当成空值；
                 # dtype=object：先原样收下，否则像 "00123" 这种文本单元格会被推断成数字、前导零丢掉。
@@ -266,9 +252,7 @@ def _read_xlsx(
     except TableError:
         raise
     except Exception as exc:  # 损坏文件的异常类型很杂，统一转成用户能看懂的话
-        raise TableError(
-            "XLSX 无法打开：文件可能已损坏，或者其实是改了扩展名的其他文件。"
-        ) from exc
+        raise TableError("XLSX 无法打开：文件可能已损坏，或者其实是改了扩展名的其他文件。") from exc
 
     notes: list[str] = []
     if merged:
@@ -284,9 +268,7 @@ def _read_xlsx(
         if sheet is None and index:
             skipped_names = "、".join(f"「{name}」" for name in labels[:index])
             notes.append(f"前面的工作表{skipped_names}没有数据，已读取「{chosen}」。")
-        notes.append(
-            f"该文件有 {len(labels)} 个工作表，本次只读取「{chosen}」；其他表不读取。"
-        )
+        notes.append(f"该文件有 {len(labels)} 个工作表，本次只读取「{chosen}」；其他表不读取。")
     return LoadedTable(df, notes + header_notes, chosen, labels)
 
 
@@ -367,9 +349,7 @@ def _normalize_headers(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         )
     renamed = [str(old) for old, new in zip(df.columns, columns) if str(old) != new]
     if renamed and not auto_named:
-        notes.append(
-            "有重复的列名，已自动加序号区分（如「金额_2」）；需要的话可在「列重命名」里改。"
-        )
+        notes.append("有重复的列名，已自动加序号区分（如「金额_2」）；需要的话可在「列重命名」里改。")
     if columns == [str(column) for column in df.columns]:
         return df, notes
     out = df.copy()
