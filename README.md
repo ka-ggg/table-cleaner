@@ -889,7 +889,7 @@ XLSX 编号文本/数字开关（v2.0.0）、分块清洗与硬超时（v2.0.0�
 | `FAQ.md` | 客户 | 常见报错与处理、数据口径、隐私 |
 | `SELLER_SUPPORT_GUIDE.md` | 你（卖的人） | 客户报障怎么问、怎么判断、哪些能自己修 |
 | `CHANGELOG.md` | 你自己 | 版本变更记录 |
-| `RELEASE_CHECKLIST.md` | 你自己 | 发布前逐项打勾（含必须补的 LICENSE） |
+| `RELEASE_CHECKLIST.md` | 你自己 | 发布前逐项打勾（v2.0.1 快照；LICENSE 已在 v2.2.0 补齐） |
 | `THIRD_PARTY_LICENSES.md` | 你自己/法务 | 三个运行依赖的许可证事实 |
 | `ENGINEERING_STANDARDS.md` | 你自己/技术复核 | 常设工程标准：分级、棘轮、边缘清单、测试/发布门禁与豁免登记 |
 
