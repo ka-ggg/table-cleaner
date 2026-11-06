@@ -100,12 +100,24 @@ from .rules import (
 from .rules import (
     _looks_like_formula as _looks_like_formula,
 )
+from .service import (
+    CleanResult,
+    InspectResult,
+    clean_bytes,
+    inspect_bytes,
+    options_from_rules,
+    render_report,
+)
 from .templates import (
+    LEGACY_TEMPLATE_VERSION,
+    TEMPLATE_FORMAT_VERSION,
     TEMPLATE_TOOL,
     TEMPLATE_VERSION,
+    TemplateInfo,
     build_template,
     dumps,
     filter_for_columns,
+    load_template,
     loads,
     normalize_rules,
     rules_to_computed_text,
@@ -205,11 +217,22 @@ __all__ = [
     "unique_names",
     "entry_name",
     "build_zip",
+    # 编程式入口
+    "CleanResult",
+    "InspectResult",
+    "clean_bytes",
+    "inspect_bytes",
+    "options_from_rules",
+    "render_report",
     # 模板
     "TEMPLATE_TOOL",
     "TEMPLATE_VERSION",
+    "TEMPLATE_FORMAT_VERSION",
+    "LEGACY_TEMPLATE_VERSION",
+    "TemplateInfo",
     "build_template",
     "dumps",
+    "load_template",
     "loads",
     "normalize_rules",
     "filter_for_columns",

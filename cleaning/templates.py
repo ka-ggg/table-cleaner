@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any, Iterable, NamedTuple
 
 from .errors import TableError
 
 TEMPLATE_TOOL = "表格清洗小工具"
-TEMPLATE_VERSION = 2
+TEMPLATE_VERSION = 2  # 旧「版本」字段：v2.x 的模板包版本，保持不动
+TEMPLATE_FORMAT_VERSION = 1  # 新 template_version 字段：模板格式版本，只在格式变化时递增
+LEGACY_TEMPLATE_VERSION = 0  # 没有 template_version 字段的旧模板
 _MAX_TEMPLATE_BYTES = 1024 * 1024  # 1 MB：规则模板不该这么大，多半是选错了文件
 
 _LIST_KEYS = ("按列去重", "删除空值行", "删除列", "列顺序", "转数字", "转日期")
@@ -108,25 +110,46 @@ def normalize_rules(rules: Any) -> dict[str, Any]:
     }
 
 
-def build_template(rules: dict[str, Any], name: str = "", now: datetime | None = None) -> dict[str, Any]:
-    """生成可下载的模板对象；rules 不合法时直接抛中文错误（不让用户存下坏模板）。"""
-    normalized = normalize_rules(rules)
-    return {
-        "工具": TEMPLATE_TOOL,
-        "版本": TEMPLATE_VERSION,
-        "名称": (name or "我的清洗规则").strip()[:40],
-        "保存时间": (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S"),
-        "规则": normalized,
-    }
+class TemplateInfo(NamedTuple):
+    """模板文件的元信息 + 规整后的规则；CLI/API 用它显示版本与字段。"""
+
+    template_version: int
+    is_legacy: bool
+    tool: str | None
+    name: str | None
+    saved_at: str | None
+    rules: dict[str, object]
+    document: dict[str, object]
 
 
-def dumps(template: dict[str, Any]) -> bytes:
-    """导出模板 JSON 字节（UTF-8，中文不转义，方便用记事本查看和改）。"""
-    return (json.dumps(template, ensure_ascii=False, indent=2, sort_keys=False) + "\n").encode("utf-8")
+def _optional_text(document: dict[str, object], key: str) -> str | None:
+    """元信息字段只在是字符串时采用；手写模板里写错类型时不影响规则读取。"""
+    value = document.get(key)
+    return value if isinstance(value, str) else None
 
 
-def loads(data: bytes | str) -> dict[str, Any]:
-    """读模板文件，返回规整后的规则字典；坏文件给可操作的中文提示。"""
+def _template_version(document: dict[str, object]) -> tuple[int, bool]:
+    """识别模板格式版本；缺失按旧模板 0，未知更高版本给中文错误而不是崩溃。"""
+    if "template_version" not in document:
+        return LEGACY_TEMPLATE_VERSION, True
+    raw = document["template_version"]
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise TableError(
+            "模板里的「template_version」应为整数（当前支持 1）；"
+            f"收到 {raw!r}，请用本工具导出的模板，或删掉这个字段按旧模板使用。"
+        )
+    if raw < LEGACY_TEMPLATE_VERSION:
+        raise TableError(f"模板里的「template_version」不能是负数（收到 {raw}）；请检查模板文件。")
+    if raw > TEMPLATE_FORMAT_VERSION:
+        raise TableError(
+            f"模板格式版本 {raw} 高于当前工具支持的版本 {TEMPLATE_FORMAT_VERSION}；"
+            "这个模板可能来自更新版本，请升级 table-cleaner 后再打开，或改用旧模板。"
+        )
+    return raw, raw == LEGACY_TEMPLATE_VERSION
+
+
+def _parse_document(data: bytes | str) -> dict[str, Any]:
+    """把模板字节/文本解析成 JSON 对象；坏文件给可操作的中文提示。"""
     if isinstance(data, bytes):
         if not data:
             raise TableError("模板文件是空的（0 字节），请重新选择。")
@@ -151,8 +174,51 @@ def loads(data: bytes | str) -> dict[str, Any]:
         ) from None
     if not isinstance(document, dict):
         raise TableError("模板文件里应是一个 JSON 对象，请用本工具导出的模板。")
+    return document
+
+
+def build_template(rules: dict[str, Any], name: str = "", now: datetime | None = None) -> dict[str, Any]:
+    """生成可下载的模板对象；rules 不合法时直接抛中文错误（不让用户存下坏模板）。"""
+    normalized = normalize_rules(rules)
+    return {
+        "工具": TEMPLATE_TOOL,
+        "版本": TEMPLATE_VERSION,
+        "template_version": TEMPLATE_FORMAT_VERSION,
+        "名称": (name or "我的清洗规则").strip()[:40],
+        "保存时间": (now or datetime.now()).strftime("%Y-%m-%d %H:%M:%S"),
+        "规则": normalized,
+    }
+
+
+def dumps(template: dict[str, Any]) -> bytes:
+    """导出模板 JSON 字节（UTF-8，中文不转义，方便用记事本查看和改）。"""
+    return (json.dumps(template, ensure_ascii=False, indent=2, sort_keys=False) + "\n").encode("utf-8")
+
+
+def load_template(data: bytes | str) -> TemplateInfo:
+    """读取模板并返回元信息 + 规则；兼容无 ``template_version`` 的旧模板。
+
+    版本规则：字段缺失 = 0（旧模板，正常读入）；当前支持 1；
+    更高的整数或非整数类型一律抛中文 ``TableError``，不静默按低版本解析。
+    """
+    document = _parse_document(data)
+    version, is_legacy = _template_version(document)
     rules = document.get("规则", document)
-    return normalize_rules(rules)
+    normalized = normalize_rules(rules)
+    return TemplateInfo(
+        template_version=version,
+        is_legacy=is_legacy,
+        tool=_optional_text(document, "工具"),
+        name=_optional_text(document, "名称"),
+        saved_at=_optional_text(document, "保存时间"),
+        rules=normalized,
+        document=document,
+    )
+
+
+def loads(data: bytes | str) -> dict[str, Any]:
+    """读模板文件，返回规整后的规则字典；坏文件给可操作的中文提示。"""
+    return load_template(data).rules
 
 
 def filter_for_columns(rules: dict[str, Any], columns: Iterable[str]) -> tuple[dict[str, Any], list[str]]:
