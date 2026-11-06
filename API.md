@@ -73,6 +73,8 @@
 | --- | --- |
 | `TEMPLATE_TOOL` | 模板「工具」字段固定值 |
 | `TEMPLATE_VERSION` | 旧「版本」字段值（保持 2，兼容既有模板） |
+| `TEMPLATE_FORMAT_VERSION` / `LEGACY_TEMPLATE_VERSION` | 新 `template_version` 的当前值 1 / 旧模板 0 |
+| `TemplateInfo` / `load_template(data)` | 模板元信息（工具、名称、保存时间、版本、规则、原始对象）与读取入口 |
 | `build_template(rules, name="", now=None)` | 校验规则并生成模板对象；写入 `template_version: 1` |
 | `dumps(template)` | 模板对象 → UTF-8 JSON 字节 |
 | `loads(data)` | 读模板 → 规整后的规则字典（兼容旧模板与只有规则层的 JSON） |
@@ -98,7 +100,7 @@
 
 | 名字 | 用途 |
 | --- | --- |
-| `CleanResult` | 编程式清洗结果：文件字节、建议文件名、前后行数、步骤、说明、报告文本 |
+| `CleanResult` | 编程式清洗结果：来源文件名、建议输出名、文件字节、前后行数、步骤、说明、报告文本 |
 | `InspectResult` | 只检查结果：行列、列名、空值、重复行、可疑格式、读取说明、报告文本 |
 | `clean_bytes(filename, data, options, ...)` | 对内存中的文件字节执行一次完整清洗并导出 |
 | `inspect_bytes(filename, data, ...)` | 只检查不清洗，返回结构化结果与中文报告 |
@@ -107,3 +109,15 @@
 
 HTTP 入口不在 `__all__` 内，通过 `python -m cleaning.http_api` 或 console script
 `table-cleaner-api` 启动；接口说明见 `README.md` 的「API 雏形」章节。
+
+## 9. HTTP API 雏形（无鉴权，仅本机/内网）
+
+| 方法与路径 | 作用 |
+| --- | --- |
+| `POST /api/jobs` | 提交一次清洗；JSON 字段：`filename`、`content_base64`、可选 `template`（模板对象）或 `rules`（规则对象）、`export_format`、`formula_mode`、`number_mode` |
+| `GET /api/jobs/{id}/result` | 取清洗后的结果文件 |
+| `GET /api/jobs/{id}/report` | 取中文清洗报告与步骤/说明（JSON） |
+
+- 默认只监听 `127.0.0.1:8765`，**没有鉴权**，不要直接暴露到公网。
+- 任务只存在进程内存，最多保留 20 个（FIFO），服务重启即丢；不做队列/持久化。
+- 所有错误返回中文 JSON：`{"错误": "..."} `；请求体上限默认 32 MB（`TABLE_CLEANER_API_MAX_BODY_MB`）。

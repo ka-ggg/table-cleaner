@@ -89,7 +89,7 @@ def test_inspect_bytes_does_not_clean_or_modify_source():
 
 
 def test_render_report_dispatches_both_result_types():
-    clean_result = cleaning.CleanResult("a.csv", b"", "csv", 1, 1, {}, (), (), None)
+    clean_result = cleaning.CleanResult("a.csv", "清洗后_a.csv", b"", "csv", 1, 1, {}, (), (), None)
     inspect_result = cleaning.InspectResult("a.csv", 1, 1, ("a",), {"a": 0}, 0, {}, (), None)
     assert cleaning.render_report(clean_result).startswith("# 清洗报告")
     assert cleaning.render_report(inspect_result).startswith("# 检查报告")

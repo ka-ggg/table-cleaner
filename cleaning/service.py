@@ -22,6 +22,7 @@ from .transform import CleanOptions, ColumnOps, clean_table
 class CleanResult:
     """一次完整清洗的结果，供 CLI/API/调用方写文件和展示报告。"""
 
+    source: str  # 输入文件名（报告里给用户看）
     filename: str  # 建议的输出文件名（带原文件名与时间戳）
     data: bytes  # 导出的文件内容
     export_format: str  # csv / xlsx
@@ -113,6 +114,7 @@ def clean_bytes(
     else:
         content = to_csv_bytes(report.df, neutralize_formulas=formula_mode)
     return CleanResult(
+        source=filename,
         filename=timestamped_name(filename, fmt),
         data=content,
         export_format=fmt,
@@ -158,7 +160,8 @@ def _render_clean_report(result: CleanResult) -> str:
     lines = [
         "# 清洗报告",
         "",
-        f"- 文件：{result.filename}",
+        f"- 来源：{result.source}",
+        f"- 建议输出文件名：{result.filename}",
         f"- 导出格式：{result.export_format}",
     ]
     if result.sheet_name:
