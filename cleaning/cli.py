@@ -56,7 +56,7 @@ def _translate_usage_error(message: str) -> str:
         return f"参数取值不合法：{text.split(':', 1)[1].strip()}"
     if text.startswith("argument ") and ": " in text:
         argument, detail = text.split(": ", 1)
-        return f"参数 {argument[9:]}：{detail}"
+        return f"参数 {argument[9:]}：{_translate_usage_error(detail)}"
     if "expected one argument" in text:
         return "参数缺少取值"
     return text
