@@ -13,6 +13,8 @@
 - ``templates``   清洗规则模板的 JSON 读写校验、template_version 版本识别、按当前列过滤
 - ``batch``       多张工作表 / 多个文件 → 逐一清洗 → 打包 ZIP
 - ``service``     编程式入口：clean_bytes / inspect_bytes / options_from_rules / 报告
+- ``engine``      引擎协议、17 项能力注册表与 pandas 参考引擎（v2.4.0 内部预埋，默认仍走 pandas）
+- ``pipeline``    Pipeline DSL v1：校验、模板迁移、编译为 CleanOptions、计划描述（内部模块，不进 __all__）
 - ``cli``         table-cleaner 命令行（clean / inspect / template / batch）
 - ``api.http_api`` table-cleaner-api 本地 HTTP 雏形（独立入口层，标准库，无鉴权）
 

@@ -78,6 +78,7 @@
 | --- | --- | --- |
 | `pytest` | MIT | 测试框架 |
 | `streamlit==1.66.0` | Apache-2.0 | 固定版本以支持 `AppTest` 的 file_uploader |
+| `jsonschema` | MIT | Pipeline DSL v1 的 JSON Schema 校验（v2.4.0 仅开发依赖；v3.0 公开 DSL 时提升为运行时依赖） |
 
 ## 5. 分发时要做的事
 

@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ka-ggg/table-cleaner/cleaning/schema/pipeline-v1.json",
+  "title": "table-cleaner Pipeline DSL v1",
+  "description": "v2.4.0 内部流水线 DSL v1：严格版本、未知字段拒绝、节点参数结构校验；业务语义（节点 id 唯一、阶段顺序）由 cleaning.pipeline 校验。",
+  "type": "object",
+  "required": ["dsl_version", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "dsl_version": {
+      "description": "DSL 格式版本；v1 固定为整数 1，任何格式变化都必须升版本并提供迁移。",
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "description": "流水线名称，仅用于展示。",
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "description": "引擎偏好；v2.4.0 仅在内部/测试使用，默认 pandas。",
+      "type": "object",
+      "required": ["preference"],
+      "additionalProperties": false,
+      "properties": {
+        "preference": {
+          "type": "string",
+          "enum": ["pandas", "polars"],
+          "default": "pandas"
+        }
+      }
+    },
+    "source": {
+      "description": "输入层设置；sheet 等 IO 选择不在 DSL 内。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header_row": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      }
+    },
+    "nodes": {
+      "description": "按阶段顺序排列的节点；空数组合法，表示不做任何清洗。",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "节点 id：唯一、稳定，进入计划描述，将来可被行级血缘引用。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\s]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "row.drop_duplicates",
+            "row.dedupe_by",
+            "row.drop_missing",
+            "column.drop",
+            "column.to_number",
+            "column.to_date",
+            "column.rename",
+            "column.compute",
+            "column.order"
+          ]
+        },
+        "params": {
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"type": {"const": "row.drop_duplicates"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/emptyParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "row.dedupe_by"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/nameListParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "row.drop_missing"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/nameListParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "column.drop"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/nameListParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "column.to_number"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/nameListParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "column.to_date"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/nameListParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "column.rename"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/renameParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "column.compute"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/computeParams"}}
+          }
+        },
+        {
+          "if": {
+            "properties": {"type": {"const": "column.order"}},
+            "required": ["type"]
+          },
+          "then": {
+            "properties": {"params": {"$ref": "#/$defs/nameListParams"}}
+          }
+        }
+      ]
+    },
+    "emptyParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "nameListParams": {
+      "type": "object",
+      "required": ["columns"],
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "renameParams": {
+      "type": "object",
+      "required": ["renames"],
+      "additionalProperties": false,
+      "properties": {
+        "renames": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/renamePair"
+          }
+        }
+      }
+    },
+    "renamePair": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "computeParams": {
+      "type": "object",
+      "required": ["name", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    }
+  }
+}
