@@ -485,3 +485,29 @@ def test_nan_and_numeric_zero_semantics_match_pandas():
     actual_missing = PolarsEngine().clean_report(missing, drop_missing_in=["a"])
     pd.testing.assert_frame_equal(expected_missing.df, actual_missing.df)
     assert len(actual_missing.df) == 2
+
+
+def test_leading_zero_and_fullwidth_numbers_follow_pandas():
+    leading = pd.DataFrame({"n": ["00123", "000", ""]})
+    ops = ColumnOps(to_number=("n",))
+    assert preflight(leading, CleanOptions(columns=ops)).uses_polars
+    expected = transform.apply_transforms(leading, ops)
+    actual = PolarsEngine().apply_transforms(leading, ops)
+    _assert_frame_equal(expected[0], actual[0])
+    assert expected[1] == actual[1]
+    assert expected[0]["n"].tolist()[:2] == [123, 0]
+    # 全角数字不是 pandas 能直接识别的数字：整条流水线回落并保留原文。
+    fullwidth = pd.DataFrame({"n": ["１２３", "４５"]})
+    assert not preflight(fullwidth, CleanOptions(columns=ops)).uses_polars
+    expected_fullwidth = transform.apply_transforms(fullwidth, ops)
+    actual_fullwidth = PolarsEngine().apply_transforms(fullwidth, ops)
+    _assert_frame_equal(expected_fullwidth[0], actual_fullwidth[0])
+    assert expected_fullwidth[1] == actual_fullwidth[1]
+    # Python 的 float/Decimal 接受下划线，但 pandas / Polars 都不接受；不能悄悄转。
+    underscore = pd.DataFrame({"n": ["1_000", "1_0.5"]})
+    assert not preflight(underscore, CleanOptions(columns=ops)).uses_polars
+    expected_underscore = transform.apply_transforms(underscore, ops)
+    actual_underscore = PolarsEngine().apply_transforms(underscore, ops)
+    _assert_frame_equal(expected_underscore[0], actual_underscore[0])
+    assert expected_underscore[1] == actual_underscore[1]
+    assert expected_underscore[0]["n"].tolist() == ["1_000", "1_0.5"]

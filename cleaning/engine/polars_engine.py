@@ -49,6 +49,9 @@ _STRING_DTYPE = pl.Utf8
 _MISSING_COLUMN_REASON = "Polars 无法无损映射该列（混合类型或扩展 dtype）"
 _SAMPLE_REASON = "sample > 0 需要逐行样例与删除原因，v2.4.0 统一回落 pandas"
 _FRAME_PLACEHOLDER = "__polars_result__"
+# pandas 的数字识别只接受 ASCII 十进制写法；下划线、全角/阿拉伯数字都能被 Python
+# 的 float/Decimal 接受，但 pandas 与 Polars 都不接受，预检必须按 pandas 口径拦掉。
+_ASCII_NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
 
 
 @dataclass(frozen=True)
@@ -265,6 +268,8 @@ def _numeric_cell_problem(value: object) -> str | None:
         return None
     if _THOUSANDS_RE.fullmatch(text):
         text = text.replace(",", "")
+    if not text.isascii() or _ASCII_NUMBER_RE.fullmatch(text) is None:
+        return f"「{value}」不是 pandas 能识别的 ASCII 数字写法"
     try:
         candidate = Decimal(text)
     except (InvalidOperation, ValueError):
