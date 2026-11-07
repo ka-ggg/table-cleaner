@@ -137,7 +137,7 @@
 
 | 检查 | 当前状态【现行值】 | 切换条件【目标值】 |
 | --- | --- | --- |
-| Ruff | CI 警告 job，`continue-on-error: true` | 该 job 连续 2 个发布版本全绿，且 `per-file-ignores` 条数为 0；满足后删除 `continue-on-error` |
+| Ruff | 已切换门禁（v2.4.0）：CI job 不带 `continue-on-error` | 该 job 连续 2 个发布版本全绿，且 `per-file-ignores` 条数为 0；v2.2.0 / v2.3.0 已满足，v2.4.0 起切换 |
 | mypy | 非严格，4 条错误 | `cleaning/` 错误数连续 2 个版本为 0；满足后切 `disallow_untyped_defs = true` |
 | coverage | 仅测量，93% | 基线已公布（本文附录 C）；M4 起设门禁，`cleaning/` 不低于 90% 且不低于已公布基线 |
 | pip-audit | 未引入 | 连续 1 个版本无 high/critical 漏洞后进 CI 门禁 |
@@ -233,6 +233,7 @@
 | templates（`cleaning/templates.py`） | 改名后列名引用、无 `version` 字段旧模板、迁移逐单元格一致判据 | `tests/test_v2_features.py -k "template"`、`tests/test_app_ui_v2.py` |
 | limits/rules（`cleaning/limits.py`、`cleaning/rules.py`） | 上限早停与中文提示、分块 = 整表不变量、缺失值/重复行/可疑格式判定口径唯一出处 | `tests/test_v2_features.py -k "limit or chunk or missing"` |
 | 界面/批量（`app.py`、`cleaning/batch.py`） | 入口共用 `CleanOptions`/`ColumnOps`、批量与单文件结果一致、选项变化旧下载失效、进度与超时、中文错误 | `tests/test_app_ui.py`、`tests/test_app_ui_v2.py`、`tests/test_v2_features.py -k "batch"` |
+| 引擎 / DSL（`cleaning/engine/`、`cleaning/pipeline.py`） | 默认 pandas 不变、回落显式可追踪、未装 Polars 中文错误、`sample > 0` 回落、注册表/DSL 合同与文档一致、入口与 `__all__` 隔离 | `tests/test_v240_*.py`、`benchmarks/verify_engines.py` |
 
 逐类细则（每类改动都必须逐条核对，不能只看表头）：
 
@@ -278,6 +279,17 @@
    - 旧下载失效：任何选项变化后旧导出必须失效，下载按钮消失，避免用户拿到旧规则文件。
    - 进度与超时：>10 万行有分块进度；超时给中文提示，不产出半成品。
    - 中文错误：页面与批量结果不出现英文堆栈，异常统一收敛为 `TableError` 文案。
+
+7. **改引擎 / DSL**
+   - 默认路径：默认引擎必须是 pandas；默认 `clean_table` / `clean_bytes` 直通现行实现，
+     不 import 引擎包，未安装 Polars 时也不影响默认入口。
+   - 回落显式：能力表或执行前预检判定回落时，整条流水线改走 pandas 并留下计划/登记依据；
+     禁止运行到一半静默换引擎，禁止把未实现能力标成已对齐。
+   - 可选依赖：显式请求 Polars 但环境缺失时抛中文 `TableError`，提示安装 extra；不静默回退。
+   - 入口隔离：CLI / HTTP API / Streamlit / 批量不暴露 `engine` 或 DSL；`cleaning.__all__` 不增删。
+   - 文档一致：`docs/ENGINE_ALIGNMENT.md` / `docs/PIPELINE_DSL.md` 的表格与数字由测试读取
+     `registry.py` / `known_differences.py` / `pipeline.py` 校验，禁止手写第二份权威表。
+   - 基准：P1 benchmark 只记录、不设性能门禁；默认 pandas 相对上一版回退不得超过 10%。
 
 ## 7 测试标准
 
@@ -485,7 +497,7 @@
 
 | 工具链 | 引入节点 | 本版状态【现行值】 | 警告 → 门禁切换条件【目标值】 |
 | --- | --- | --- | --- |
-| Ruff（format + check） | v2.2.0（对应规划 M1 的工程化部分） | 已落地；本地与 CI 均通过；CI job `continue-on-error: true` | 连续 2 个发布版本全绿且 `per-file-ignores` 为 0，删除 `continue-on-error` |
+| Ruff（format + check） | v2.2.0（对应规划 M1 的工程化部分） | 已落地；v2.4.0 起 CI job 带门禁（无 `continue-on-error`），本地与 CI 全绿 | 已满足：连续 2 个发布版本全绿且 `per-file-ignores` 为 0 |
 | mypy（非严格） | v2.2.0（M1） | 已落地；4 条错误，全部登记豁免 | 连续 2 个版本错误数 0，切 `disallow_untyped_defs = true` |
 | coverage | v2.2.0（M1） | 已测量 93%，仅公布，不设门禁 | 基线已公布；M4 起 `cleaning/` ≥90% 且不低于基线 |
 | CI 矩阵（3.11/3.12） | v2.2.0（M1） | 已配置；本地仅 3.12 实跑，3.11 未执行 | 3.11 在 CI 连续 2 个版本全绿后视为稳定 |

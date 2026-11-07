@@ -22,10 +22,8 @@ jobs:
       - run: python -m pytest -q -rs
 
   ruff:
-    # 警告期（v2.2.0 引入）：只提示、不阻断合并。
-    # 切换为门禁的条件写在 ENGINEERING_STANDARDS.md 第 2 节与第 14 节：
-    # 本 job 连续两个版本全绿，且 per-file-ignores 清零后，删除 continue-on-error。
-    continue-on-error: true
+    # v2.4.0 起由警告切换为门禁：v2.2.0 / v2.3.0 连续两个发布版本全绿，
+    # 且 per-file-ignores 为 0（见 ENGINEERING_STANDARDS.md 第 2.2 节与第 14.1 节）。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
