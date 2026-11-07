@@ -6,7 +6,7 @@ import csv
 from pathlib import Path
 
 import pandas as pd
-from benchmarks import generate, run, worker
+from benchmarks import generate, run, verify_engines, worker
 
 
 def _read_rows(path: Path) -> list[list[str]]:
@@ -50,6 +50,7 @@ def test_worker_run_once_returns_all_measurements(tmp_path):
     result = worker.run_once(dataset, output)
     assert set(result) == {
         "dataset",
+        "engine",
         "rows",
         "rows_before",
         "input_bytes",
@@ -60,6 +61,7 @@ def test_worker_run_once_returns_all_measurements(tmp_path):
         "export_seconds",
         "peak_mb",
     }
+    assert result["engine"] == "pandas"
     assert int(result["rows_before"]) == 100
     assert int(result["rows"]) <= 100
     assert float(result["peak_mb"]) > 0
@@ -67,6 +69,29 @@ def test_worker_run_once_returns_all_measurements(tmp_path):
     assert output.exists() and output.stat().st_size == int(result["output_bytes"])
     back = pd.read_csv(output, dtype=str, keep_default_na=False)
     assert list(back.columns)[:3] == ["订单号", "客户", "含税金额"]
+
+
+def test_worker_run_once_records_polars_engine(tmp_path):
+    """P1 信息性对比：worker 支持显式 polars，并记录 engine 字段。"""
+    dataset = generate.generate_dataset(tmp_path / "data.csv", 100)
+    pandas_output = tmp_path / "pandas.csv"
+    polars_output = tmp_path / "polars.csv"
+    pandas_result = worker.run_once(dataset, pandas_output, engine="pandas")
+    polars_result = worker.run_once(dataset, polars_output, engine="polars")
+    assert pandas_result["engine"] == "pandas"
+    assert polars_result["engine"] == "polars"
+    assert pandas_output.read_bytes() == polars_output.read_bytes()
+    assert int(polars_result["rows"]) == int(pandas_result["rows"])
+
+
+def test_verify_engines_compares_real_bytes_and_report(tmp_path):
+    """G-05 冒烟：真实 CSV 字节上 pandas / Polars 的帧、报告与导出字节一致。"""
+    dataset = generate.generate_dataset(tmp_path / "data.csv", 1200)
+    result = verify_engines.verify_dataset("data", dataset)
+    assert result.rows_before == 1200
+    assert result.rows_after <= result.rows_before
+    assert result.csv_bytes > 0
+    assert result.effective_engine in {"pandas", "polars"}
 
 
 def test_run_main_writes_reproducible_baseline_table(tmp_path, capsys):
@@ -86,13 +111,17 @@ def test_run_main_writes_reproducible_baseline_table(tmp_path, capsys):
             str(out_dir),
             "--baseline",
             str(baseline),
+            "--engines",
+            "pandas",
+            "polars",
         ]
     )
     assert code == 0
     text = baseline.read_text(encoding="utf-8")
     assert "# table-cleaner benchmark 基线" in text
-    assert "| Python |" in text and "| pandas |" in text
-    assert "| small | 10,000 |" in text
+    assert "| Python |" in text and "| pandas |" in text and "| polars |" in text
+    assert "| small | pandas | 10,000 |" in text
+    assert "| small | polars | 10,000 |" in text
     assert "未执行" in text
     assert "每项 1 次取中位数" in text
     assert "第 1/1 次" in capsys.readouterr().out
