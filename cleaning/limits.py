@@ -70,6 +70,8 @@ DEFAULT_TIMEOUT_SECONDS = _ENV_DEFAULTS["timeout_seconds"]
 # HTTP API 雏形的进程内限制：任务只留在内存，不落盘、不排队。
 API_MAX_JOBS = _env_int("TABLE_CLEANER_API_MAX_JOBS", 20)
 API_MAX_BODY_BYTES = _env_int("TABLE_CLEANER_API_MAX_BODY_MB", 32) * _MB
+# 单次请求体读取超时：防止客户端声明 Content-Length 却不发够正文，把 handler 线程挂死。
+API_READ_TIMEOUT_SECONDS = float(_env_int("TABLE_CLEANER_API_READ_TIMEOUT_SECONDS", 5))
 
 
 class Limits(NamedTuple):
@@ -143,7 +145,12 @@ def current_limits(**overrides: int) -> Limits:
         value = getattr(pkg, const, fallback)
         minimum = 0 if field == "timeout_seconds" else 1
         values[field] = value if isinstance(value, int) and value >= minimum else fallback
-    values.update({key: int(value) for key, value in overrides.items() if value is not None})
+    for key, value in overrides.items():
+        if value is None:
+            continue
+        # 超时 0 是合法值（不限时）；其余上限按旧行为忽略 0/负数，避免入口传错就放开限制。
+        if key == "timeout_seconds" or int(value) > 0:
+            values[key] = int(value)
     return Limits(**values)
 
 

@@ -1,7 +1,7 @@
 """表格清洗的核心逻辑（v2.0.0 起是一个包，不再是单个 cleaning.py）。
 
-这里只有「对外接口」和文档：界面、测试、批量脚本都从 ``cleaning`` 直接 import，
-不用关心内部怎么拆。各模块分工：
+这里只有「对外接口」和文档：界面、CLI、HTTP API、测试都从 ``cleaning`` 直接 import，
+不用关心内部怎么拆。公共 API 清单见 ``cleaning.__all__`` 与仓库根目录 ``API.md``。各模块分工：
 
 - ``limits``      所有 MAX_* 上限与性能参数（环境变量可覆盖），分块/超时默认值
 - ``errors``      用户可见的 TableError、协作式超时 Deadline
@@ -10,8 +10,11 @@
 - ``rules``       判定与行清洗：缺失值、重复行、可疑格式、公式判断、分块删行
 - ``transform``   列变换：重命名、删列、调顺序、类型转换、计算列（安全求值）
 - ``export``      CSV/XLSX/ZIP 导出、公式注入三种模式、编号文本/数字开关、文件名
-- ``templates``   清洗规则模板的 JSON 读写校验、按当前列过滤
+- ``templates``   清洗规则模板的 JSON 读写校验、template_version 版本识别、按当前列过滤
 - ``batch``       多张工作表 / 多个文件 → 逐一清洗 → 打包 ZIP
+- ``service``     编程式入口：clean_bytes / inspect_bytes / options_from_rules / 报告
+- ``cli``         table-cleaner 命令行（clean / inspect / template / batch）
+- ``api.http_api`` table-cleaner-api 本地 HTTP 雏形（独立入口层，标准库，无鉴权）
 
 判定口径（界面、README、测试引用同一份文字）：
 
@@ -25,7 +28,7 @@
 
 from __future__ import annotations
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 from .batch import BatchItem, BatchJob, BatchReport, run_batch
 from .errors import Deadline, TableError
@@ -62,6 +65,9 @@ from .io import (
     _normalize_headers as _normalize_headers,
 )
 from .limits import (
+    API_MAX_BODY_BYTES,
+    API_MAX_JOBS,
+    API_READ_TIMEOUT_SECONDS,
     CHUNK_ROWS,
     CHUNK_THRESHOLD_ROWS,
     DEFAULT_TIMEOUT_SECONDS,
@@ -155,6 +161,9 @@ __all__ = [
     "MAX_COLS",
     "MAX_CELLS",
     "MAX_XLSX_UNCOMPRESSED_BYTES",
+    "API_MAX_JOBS",
+    "API_MAX_BODY_BYTES",
+    "API_READ_TIMEOUT_SECONDS",
     "EXCEL_MAX_ROWS",
     "EXCEL_MAX_COLS",
     "CHUNK_ROWS",

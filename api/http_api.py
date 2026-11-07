@@ -26,8 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, unquote, urlparse
 
 import cleaning
-
-from .limits import API_MAX_BODY_BYTES, API_MAX_JOBS
+from cleaning import API_MAX_BODY_BYTES, API_MAX_JOBS, API_READ_TIMEOUT_SECONDS
 
 PROG = "table-cleaner-api"
 _CSV_MIME = "text/csv; charset=utf-8"
@@ -116,6 +115,30 @@ class ApiHandler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str) -> None:
         self._send_json(int(status), {"错误": message})
 
+    def _read_body(self, length: int) -> bytes:
+        """读满声明的正文；半截正文/连接不动时按中文 400 返回，不能挂住线程。"""
+        chunks: list[bytes] = []
+        remaining = length
+        self.connection.settimeout(API_READ_TIMEOUT_SECONDS)
+        try:
+            while remaining > 0:
+                chunk = self.rfile.read(min(remaining, 65536))
+                if not chunk:
+                    raise ApiError(
+                        HTTPStatus.BAD_REQUEST,
+                        "请求体不完整：连接在正文读完前就结束了，请重新提交。",
+                    )
+                chunks.append(chunk)
+                remaining -= len(chunk)
+        except (TimeoutError, OSError):
+            raise ApiError(
+                HTTPStatus.BAD_REQUEST,
+                "请求体不完整或读取超时；请确认网络后重新提交。",
+            ) from None
+        finally:
+            self.connection.settimeout(None)
+        return b"".join(chunks)
+
     def _read_payload(self) -> dict[str, object]:
         length_raw = self.headers.get("Content-Length")
         try:
@@ -129,7 +152,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                 f"请求体超过 {API_MAX_BODY_BYTES // 1024 // 1024} MB 上限；请拆分文件或改用 CLI。",
             )
-        raw = self.rfile.read(length)
+        raw = self._read_body(length)
         try:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
