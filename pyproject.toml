@@ -33,11 +33,15 @@ table-cleaner = "cleaning.cli:main"
 table-cleaner-api = "api.http_api:main"
 
 [project.optional-dependencies]
+# Polars 是可选引擎（DC-4）：默认安装仍是 pandas；显式 get_engine("polars") 才需要。
+# 版本上限 <2 与规划 5.7 一致，避免大版本变更悄悄改变对齐语义。
+polars = ["polars>=1,<2"]
 dev = [
     "pytest>=8,<10",
     "ruff==0.17.4",
     "mypy==2.4.1",
     "coverage==7.17.2",
+    "polars>=1,<2",
 ]
 
 [tool.setuptools.packages.find]

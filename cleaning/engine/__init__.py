@@ -1,7 +1,8 @@
 """引擎层：协议、能力注册表与 pandas 参考实现。
 
-导入本包会注册 pandas 引擎；Polars 引擎（W2）实现后按同一协议注册，默认仍然是
-pandas。入口层（``app.py``、CLI、HTTP API）不感知这里，也不暴露引擎开关。
+导入本包只注册 pandas 引擎；Polars 引擎在显式 ``get_engine("polars")`` 时才惰性
+import 并注册，默认安装不依赖 Polars。入口层（``app.py``、CLI、HTTP API）不感知
+这里，也不暴露引擎开关。
 """
 
 from __future__ import annotations

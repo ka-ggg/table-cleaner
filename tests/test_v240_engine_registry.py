@@ -229,6 +229,9 @@ def test_unknown_engine_raises_chinese_error():
 
 def test_unavailable_engine_raises_and_never_silently_falls_back(monkeypatch: pytest.MonkeyPatch):
     """显式选择不可用引擎时报中文错误，不会静默改用 pandas。"""
+    # W2 之后 registry 会解析 polars_impl，polars 可能已经注册；先摘掉注册项，
+    # 才能测到「模块 import 失败」的惰性加载分支。
+    monkeypatch.delitem(engine_base._ENGINES, "polars", raising=False)
     monkeypatch.setitem(engine_base._LAZY_ENGINE_MODULES, "polars", "cleaning.engine.no_such_engine")
     with pytest.raises(cleaning.TableError, match="不可用") as caught:
         get_engine("polars")

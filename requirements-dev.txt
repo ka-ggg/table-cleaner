@@ -10,3 +10,6 @@ mypy==2.4.1
 coverage==7.17.2
 # Pipeline DSL v1 的 JSON Schema 校验（v2.4.0 DSL 仅内部使用，按 DC-4 先做开发依赖）
 jsonschema>=4,<5
+# Polars 双引擎对齐测试（v2.4.0 W2/W3）：开发/测试环境必须装，避免测试被静默跳过；
+# 默认运行安装不带它，见 pyproject 的 [project.optional-dependencies] polars。
+polars>=1,<2
