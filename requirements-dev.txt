@@ -8,3 +8,5 @@ streamlit==1.66.0
 ruff==0.17.4
 mypy==2.4.1
 coverage==7.17.2
+# Pipeline DSL v1 的 JSON Schema 校验（v2.4.0 DSL 仅内部使用，按 DC-4 先做开发依赖）
+jsonschema>=4,<5

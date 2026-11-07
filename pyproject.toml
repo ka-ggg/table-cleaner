@@ -43,6 +43,10 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["cleaning*", "api*"]
 
+[tool.setuptools.package-data]
+# DSL v1 schema 随 wheel 发布，由 cleaning.pipeline 通过 importlib.resources 读取。
+"cleaning.schema" = ["*.json"]
+
 [tool.ruff]
 # 全仓共用一份配置：本地、CI、编辑器都读这里，不在命令行临时拼参数。
 line-length = 120
