@@ -654,8 +654,9 @@ def describe_pipeline(pipeline: Pipeline, columns: Iterable[str]) -> PipelinePla
     """按 DSL 与当前列名生成只读执行计划；不读取数据行、不执行清洗。
 
     ``effective_engine`` 是编译期结论：Polars 偏好下，能力表判定整节点回落的节点
-    会让整条流水线走 pandas；执行前预检仍可能因数据边界改走 pandas。本版 Polars
-    引擎尚未接入（W2），这里按注册表目标状态描述，实际入口在 W5 接线。
+    会让整条流水线走 pandas；执行前预检仍可能因数据边界改走 pandas。W5 已把引擎
+    关键字接到 ``clean_table`` / ``clean_bytes``；本函数仍只做只读计划描述，不执行
+    清洗，也不读取任何数据行。
     """
     current = tuple(str(column) for column in columns)
     initial = current

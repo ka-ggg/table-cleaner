@@ -50,10 +50,18 @@ def environment_info() -> dict[str, str]:
     import openpyxl
     import pandas
 
+    try:
+        import polars
+    except ImportError:
+        polars_version = "未安装"
+    else:
+        polars_version = polars.__version__
+
     return {
         "生成时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "Python": platform.python_version(),
         "pandas": pandas.__version__,
+        "polars": polars_version,
         "numpy": numpy.__version__,
         "openpyxl": openpyxl.__version__,
         "操作系统": platform.platform(),
@@ -63,7 +71,7 @@ def environment_info() -> dict[str, str]:
     }
 
 
-def _run_worker(dataset: Path, output: Path) -> dict[str, object]:
+def _run_worker(dataset: Path, output: Path, engine: str = "pandas") -> dict[str, object]:
     command = [
         sys.executable,
         "-m",
@@ -72,6 +80,8 @@ def _run_worker(dataset: Path, output: Path) -> dict[str, object]:
         str(dataset),
         "--output",
         str(output),
+        "--engine",
+        engine,
     ]
     completed = subprocess.run(
         command,
@@ -98,7 +108,8 @@ def render_baseline(results: list[dict[str, object]], environment: dict[str, str
         "# table-cleaner benchmark 基线",
         "",
         "> 本文件由 `python -m benchmarks.run` 实测生成，数字来自命令输出，不是估算值。",
-        "> 本版只建立 pandas 基线，不设提升目标；跨机器比较只比相对值。",
+        "> pandas 是默认引擎；Polars 为 v2.4.0 内部预览。本文件只作信息性对比，不设性能门禁；",
+        "> 跨机器比较只比相对值，Polars 数字包含 pandas↔Polars 转换开销。",
         "",
         "## 环境",
         "",
@@ -123,12 +134,13 @@ def render_baseline(results: list[dict[str, object]], environment: dict[str, str
             "- 50 万行 CSV 必然超过 10 MB 网页上传上限，benchmark 只放宽「上传字节数」一项；"
             "行/列/单元格上限保持现行值（50 万行 × 4 列 = 200 万单元格，正好等于上限）。",
             "- 历史列：v2.0.1 / v2.2.0 未建立 benchmark 套件，无法补测，"
-            "对应列为「未执行」；本表是首个基线，后续版本只追加列、不覆盖本列。",
+            "对应列为「未执行」；本表是 v2.3.0 首个 pandas 基线的延续，"
+            "v2.4.0 起按 `--engines` 追加引擎列，后续版本只追加、不覆盖历史列。",
             "",
             f"## 结果（每项 {repeat} 次取中位数）",
             "",
-            "| 数据集 | 输入行数 | 清洗后行数 | 输入大小(MB) | 端到端(s) | 读取(s) | 清洗(s) | 导出(s) | 进程内存峰值(MB) | v2.0.1 基线 | v2.2.0 基线 |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+            "| 数据集 | 引擎 | 输入行数 | 清洗后行数 | 输入大小(MB) | 端到端(s) | 读取(s) | 清洗(s) | 导出(s) | 进程内存峰值(MB) | v2.0.1 基线 | v2.2.0 基线 |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
         ]
     )
     for result in results:
@@ -139,7 +151,8 @@ def render_baseline(results: list[dict[str, object]], environment: dict[str, str
         input_mb = float(runs[0]["input_bytes"]) / 1024 / 1024
         medians = {key: _median([float(run[key]) for run in runs]) for key in _RESULT_KEYS}
         lines.append(
-            f"| {result['name']} | {rows_before:,} | {rows_after:,} | {input_mb:.1f} | {medians['total_seconds']:.3f} | "
+            f"| {result['name']} | {result['engine']} | {rows_before:,} | {rows_after:,} | {input_mb:.1f} | "
+            f"{medians['total_seconds']:.3f} | "
             f"{medians['read_seconds']:.3f} | {medians['clean_seconds']:.3f} | "
             f"{medians['export_seconds']:.3f} | {medians['peak_mb']:.1f} | 未执行 | 未执行 |"
         )
@@ -149,14 +162,14 @@ def render_baseline(results: list[dict[str, object]], environment: dict[str, str
             "",
             "## 每次运行明细",
             "",
-            "| 数据集 | 第几次 | 端到端(s) | 读取(s) | 清洗(s) | 导出(s) | 内存峰值(MB) |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| 数据集 | 引擎 | 第几次 | 端到端(s) | 读取(s) | 清洗(s) | 导出(s) | 内存峰值(MB) |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for result in results:
         for index, run in enumerate(result["runs"], 1):
             lines.append(
-                f"| {result['name']} | {index} | {float(run['total_seconds']):.3f} | "
+                f"| {result['name']} | {result['engine']} | {index} | {float(run['total_seconds']):.3f} | "
                 f"{float(run['read_seconds']):.3f} | {float(run['clean_seconds']):.3f} | "
                 f"{float(run['export_seconds']):.3f} | {float(run['peak_mb']):.1f} |"
             )
@@ -168,8 +181,8 @@ def render_baseline(results: list[dict[str, object]], environment: dict[str, str
             "```bash",
             "# 1. 生成/复用固定数据（小/中/大）",
             "python -m benchmarks.generate",
-            "# 2. 每档跑 3 次，写回本文件",
-            "python -m benchmarks.run --dataset all --repeat 3",
+            "# 2. 每档跑 3 次，写回本文件（双引擎信息性对比）",
+            "python -m benchmarks.run --dataset all --repeat 3 --engines pandas polars",
             "```",
             "",
             f"> 本次重复次数：{repeat}；结果表只保留中位数，逐次明细见上一节。",
@@ -188,6 +201,13 @@ def main(argv: list[str] | None = None) -> int:
         help="跑哪一档；默认 all",
     )
     parser.add_argument("--repeat", type=int, default=3, help="每档重复次数，默认 3")
+    parser.add_argument(
+        "--engines",
+        nargs="+",
+        choices=("pandas", "polars"),
+        default=["pandas"],
+        help="要记录的引擎；默认只跑 pandas。传 `--engines pandas polars` 记录双引擎信息性对比。",
+    )
     parser.add_argument("--data-dir", type=Path, default=Path("benchmarks/data"), help="数据集目录")
     parser.add_argument("--out-dir", type=Path, default=Path("benchmarks/out"), help="导出结果目录")
     parser.add_argument("--baseline", type=Path, default=Path("benchmarks/BASELINE.md"), help="基线文件路径")
@@ -207,23 +227,27 @@ def main(argv: list[str] | None = None) -> int:
     results: list[dict[str, object]] = []
     for name in names:
         path = paths[name]
-        sys.stdout.write(f"运行 {name}（{generate.SIZES[name]:,} 行，{path.stat().st_size / 1024 / 1024:.1f} MB）...\n")
-        sys.stdout.flush()
-        runs: list[dict[str, object]] = []
-        for index in range(args.repeat):
-            output = args.out_dir / f"{name}.csv"
-            try:
-                run = _run_worker(path, output)
-            except RuntimeError as exc:
-                sys.stderr.write(f"{exc}\n")
-                return 1
-            runs.append(run)
+        for engine in args.engines:
             sys.stdout.write(
-                f"  第 {index + 1}/{args.repeat} 次：端到端 {float(run['total_seconds']):.3f}s，"
-                f"内存峰值 {float(run['peak_mb']):.1f} MB\n"
+                f"运行 {name} / {engine}（{generate.SIZES[name]:,} 行，"
+                f"{path.stat().st_size / 1024 / 1024:.1f} MB）...\n"
             )
             sys.stdout.flush()
-        results.append({"name": name, "path": str(path), "runs": runs})
+            runs: list[dict[str, object]] = []
+            for index in range(args.repeat):
+                output = args.out_dir / f"{name}-{engine}.csv"
+                try:
+                    run = _run_worker(path, output, engine)
+                except RuntimeError as exc:
+                    sys.stderr.write(f"{exc}\n")
+                    return 1
+                runs.append(run)
+                sys.stdout.write(
+                    f"  第 {index + 1}/{args.repeat} 次：端到端 {float(run['total_seconds']):.3f}s，"
+                    f"内存峰值 {float(run['peak_mb']):.1f} MB\n"
+                )
+                sys.stdout.flush()
+            results.append({"name": name, "engine": engine, "path": str(path), "runs": runs})
 
     environment = environment_info()
     baseline = render_baseline(results, environment, args.repeat)

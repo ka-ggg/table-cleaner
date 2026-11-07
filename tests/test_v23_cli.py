@@ -353,4 +353,4 @@ def test_cli_invalid_choice_and_missing_value_return_usage(tmp_path, capsys):
 
 def test_cli_version_prints_package_version(capsys):
     assert cli.main(["--version"]) == 0
-    assert "table-cleaner 2.3.0" in capsys.readouterr().out
+    assert "table-cleaner 2.4.0" in capsys.readouterr().out

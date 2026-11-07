@@ -1,6 +1,6 @@
 # 表格清洗小工具
 
-**当前版本：v2.3.0（306 项自动化测试 = 214 项 v2.2 既有基线 + 92 项 v2.3 新增）**
+**当前版本：v2.4.0（自动化测试总数见下方「确认你在跑哪个版本」；v2.3.0 的 306 项全部保留）**
 
 帮小商家和办公人员快速清理 CSV / XLSX：检查空值、重复行和可疑格式，按需删行、改列、算新列，
 一次处理多张工作表或多个文件，导出干净文件。中文界面，按手机屏幕适配；
@@ -11,7 +11,33 @@ Python 公共 API 调用同一套清洗逻辑。
 > 公共 API 清单见 [`API.md`](API.md)；benchmark 首版基线见 [`benchmarks/BASELINE.md`](benchmarks/BASELINE.md)。
 > 命令行是**预览版**，参数兼容承诺自 v3.0 起算。
 
-## v2.3.0 的改动（当前版本）
+## v2.4.0 的改动（当前版本）
+
+> 入口兼容与发布准备：默认引擎仍是 pandas，清洗语义、默认值、上限、公共 API、
+> CLI/API/UI 默认行为与 v2.3.0 一致；Polars 只作为内部预览，不进入任何默认入口。
+
+- **引擎合同与对齐**：新增 `cleaning/engine/` 引擎协议、17 项能力注册表、pandas 参考实现与
+  Polars 预览实现；核心结构算子 6/6 对齐，Polars 独立承担率 86.2%，9 个节点中有整节点回落
+  路径的只有 3/9（R5 / R6 / R8）。
+- **内部预览关键字**：`clean_table` / `clean_bytes` 新增 keyword-only `engine="pandas"`；
+  默认路径直通 v2.3.0 的 pandas 实现，不 import 引擎包；显式 `engine="polars"` 才惰性加载
+  可选依赖，未安装时抛中文错误，不静默回落。CLI / HTTP API / Streamlit / 批量不暴露该选项。
+- **Pipeline DSL v1**：内部模块 `cleaning/pipeline.py` 提供严格校验、旧模板迁移、编译为
+  `CleanOptions` 与只读计划描述；不进入 `cleaning.__all__`，CLI / API / 界面不读取 DSL。
+- **专题文档**：新增 [`docs/ENGINE_ALIGNMENT.md`](docs/ENGINE_ALIGNMENT.md)（17 项能力、已知差异、
+  回退演练）与 [`docs/PIPELINE_DSL.md`](docs/PIPELINE_DSL.md)（字段、节点、顺序、版本与错误）。
+- **回退演练**：用子进程模拟未安装 Polars，验证默认公共 API、CLI、批量完整可用，显式请求
+  Polars 给中文错误；步骤与结果见引擎对齐文档。
+- **benchmark P1**：`benchmarks/worker.py` / `run.py` 支持 `--engine`，记录 pandas / Polars
+  小、中、大三档；只作信息性对比，不设性能门禁，Polars 数字包含转换开销。
+- **CI 与测试**：Ruff job 从警告切换为门禁；pytest 3.11/3.12 矩阵不变；新增双引擎对齐、
+  注册表合同、DSL 校验/迁移/计划、入口兼容、文档一致性与回退演练测试。
+- **版本号**：`pyproject.toml`、`cleaning.__version__`、README、USER_GUIDE、API.md 统一为 **2.4.0**。
+
+本 PR 不打 tag、不发布：v2.4.0 的 tag 与正式发布由人工在发布评审（CP3）通过后另行确认。
+未做 lazy / streaming、行级血缘与性能目标（留 v3.0）；Polars 为内部预览，不承诺稳定参数。
+
+## v2.3.0 的改动（历史基线）
 
 > 只变形态，不动清洗语义：清洗判定规则、默认值和导出行为与 v2.2.0 完全一致；
 > 214 项既有测试全部保留并通过，新增 92 项测试。
@@ -481,12 +507,12 @@ CSV 没有单元格类型，用 Excel/WPS 打开时，`=`、`+`、`-`、`@`、�
 ## 确认你在跑哪个版本
 
 ```bash
-grep '__version__' cleaning/__init__.py        # 应显示 2.3.0
+grep '__version__' cleaning/__init__.py        # 应显示 2.4.0
 grep APP_VERSION app.py                        # 应显示 cleaning.__version__
-python -m pytest --collect-only -q | tail -1   # 应显示 306 tests collected
+python -m pytest --collect-only -q | tail -1   # 应显示 557 tests collected
 ```
 
-页面标题下方也会显示 `v2.3.0`。
+页面标题下方也会显示 `v2.4.0`。
 
 ## 安装
 
@@ -512,7 +538,7 @@ python -m streamlit run app.py
 
 ## 命令行（CLI 预览版）
 
-> **预览版声明**：参数兼容承诺自 v3.0 起算；v2.3.0 期间允许调整参数，每次调整会记入 CHANGELOG。
+> **预览版声明**：参数兼容承诺自 v3.0 起算；v2.4.0 仍为预览版，允许调整参数，每次调整会记入 CHANGELOG。
 > CLI 与网页版共用 `CleanOptions` / `Limits`，同一输入、同一模板的输出逐单元格一致。
 
 ```bash
@@ -612,7 +638,7 @@ python -m pytest tests/test_app_ui_v2.py -q    # 14 项，约 36 秒（v2 界面
 python -m pytest tests/test_regressions_v201.py -q  # 18 项，约 4 秒（v2.0.1 逻辑回归）
 ```
 
-数量口径：**306 = v2.2.0 既有 214 项 + v2.3.0 新增 92 项**。
+数量口径：v2.3.0 时 **306 = v2.2.0 既有 214 项 + v2.3.0 新增 92 项**；v2.4.0 在此基础上新增双引擎、DSL、入口兼容与文档测试，总数见下方 v2.4.0 实测。
 新增 92 项分布：CLI 30、API 25、limits 6、模板版本 13、编程式入口 6、
 benchmark 6、公共 API 边界 3、批量纯函数 3；`pytest --collect-only -q` 最后一行会打印总数。
 原有 214 项一个没删，测试语义冻结继续有效。
@@ -972,10 +998,11 @@ Streamlit 本身的 WebSocket 连接也会占内存，并发数要按实例内�
 | 带时区的日期 | 同一时区的日期会保留「当地时间的日期」，时区标记不保留 | Excel 单元格不支持时区 | 需要保留时区请用文本；混时区的整列会保留原文并提示 |
 | 计算列算出的大整数 | 例如 `2**100`，页面预览和 CSV 都对，导出 XLSX 后会被 Excel 按 15 位有效数字显示（值被四舍五入） | XLSX 的数字单元格本身就是双精度 | 需要完整数字就导出 CSV，或把结果当文本 |
 | 极老日期（如 1677 年） | 不同 pandas 版本解析结果可能不同（3.0 认成日期、2.2 保留文本） | pandas 版本差异 | 一般业务数据不会遇到；遇到就手工统一格式 |
-| CLI 参数 | v2.3.0 是预览版，参数兼容承诺自 v3.0 起算 | 先证明库能脱离网页运行，避免过早冻结接口 | 脚本里调用前看 `table-cleaner <子命令> --help`；调整会记 CHANGELOG |
+| CLI 参数 | v2.4.0 仍是预览版，参数兼容承诺自 v3.0 起算 | 先证明库能脱离网页运行，避免过早冻结接口 | 脚本里调用前看 `table-cleaner <子命令> --help`；调整会记 CHANGELOG |
 | HTTP API | **没有鉴权**，默认只监听 127.0.0.1，任务只存内存、最多 20 个 | 本版只验证库层可被程序调用，不做账号/权限/队列/持久化 | 只在本机或可信内网用；不要暴露公网，重启会丢任务 |
 | 在线 Demo | 本版**未提供**在线 Demo | 没有可用的托管环境，且不在本版交付范围 | 用本地 `python -m streamlit run app.py` 或 CLI/API 试用 |
-| benchmark 基线 | 只有单机一次首版基线，未做跨机/多版本对比，未设 10% 回退门禁 | 本版只要求测出基线，不设提升目标 | 看 `benchmarks/BASELINE.md` 的环境与协议；换机重跑只比相对值 |
+| Polars 引擎 | **内部预览**，不是默认引擎；CLI / HTTP API / Streamlit / 批量不暴露；未做 lazy/streaming、行级血缘、性能目标 | v2.4.0 先证明语义等价，性能与原生帧边界留给 v3.0 | 默认用 pandas；内部试跑需 `pip install .[polars]` 并显式传 `engine="polars"`，已知回落见 `docs/ENGINE_ALIGNMENT.md` |
+| benchmark 基线 | 只有单机一次首版基线，未做跨机/多版本对比，未设 10% 回退门禁 | 本版只要求测出基线，不设提升目标 | 看 `benchmarks/BASELINE.md` 与 `benchmarks/ENGINE_BENCHMARK.md` 的环境与协议；换机重跑只比相对值 |
 | 手机浏览器手工验收 | 本轮环境无法在手机里点一遍（读屏/截图不可用、端口不可达） | 环境限制，见上一节 | 交付前人工走一遍「真机验收清单」9 步 |
 
 ## 目前不包含

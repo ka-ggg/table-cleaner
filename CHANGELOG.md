@@ -3,6 +3,101 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号规则：修 bug 升末位（2.0.0 → 2.0.1），加功能升中位，不兼容改动升首位。
 
+## [2.4.0] — 2026-11-07
+
+> 入口兼容与发布准备（W5）：**默认引擎仍是 pandas**，清洗语义、默认值、上限、公共 API、
+> CLI / HTTP API / Streamlit 默认行为与 v2.3.0 一致。Polars 只作为**内部预览**接入，
+> 不进入任何默认入口；本 PR 不打 tag、不发布，tag 与正式发布由人工在 CP3 通过后另行确认。
+
+### 新增
+
+- **双引擎预埋**：新增 `cleaning/engine/` 引擎协议、17 项能力注册表、pandas 参考实现、
+  Polars 预览实现与已知差异登记表；核心结构算子 6/6 对齐，Polars 独立承担率 86.2%，
+  9 个流水线节点中有整节点回落路径的只有 3/9（R5 / R6 / R8）。
+- **入口关键字（内部预览）**：`clean_table` / `clean_bytes` 新增 keyword-only
+  `engine="pandas"`。默认值与显式 `"pandas"` 直通 v2.3.0 的 pandas 实现，不 import
+  引擎包；显式 `"polars"` 才惰性加载可选依赖。未安装 Polars 时抛中文 `TableError`，
+  不静默回落。`run_batch`、CLI、HTTP API、Streamlit 不暴露该参数。
+- **Pipeline DSL v1**：内部模块 `cleaning/pipeline.py` 提供严格三层校验、旧模板迁移、
+  编译为 `CleanOptions`、只读计划描述；不进入 `cleaning.__all__`，CLI / API / 界面不读取。
+- **专题文档**：新增 `docs/ENGINE_ALIGNMENT.md`（17 项能力、Polars 独立承担/回落原因、
+  已知差异摘要、回退演练、P1 benchmark 指针）与 `docs/PIPELINE_DSL.md`（字段、节点、顺序、
+  版本、迁移、中文错误与示例）；文档表格由测试与注册表/DSL 合同逐项核对。
+- **回退演练**：用子进程模拟未安装 Polars，验证默认公共 API、CLI、批量完整可用；
+  显式请求 Polars 给中文错误。步骤与结果写入引擎对齐文档并有自动化测试。
+- **benchmark P1**：`benchmarks/worker.py` 支持 `--engine`，`benchmarks/run.py` 支持
+  `--engines`；新增 `benchmarks/verify_engines.py` 在真实小/中/大三档数据上比较
+  pandas / Polars 的帧、报告字段与 CSV 字节。只记录、不设性能门禁。
+- **测试**：新增 58 组双引擎对齐用例（W3）、17 项注册表合同、DSL 校验/迁移/计划、
+  入口兼容与默认回归、文档一致性、未装 Polars 回退演练与双引擎真实字节校验。
+
+### 变更
+
+- **版本号**：`pyproject.toml`、`cleaning.__version__`、README、USER_GUIDE、API.md
+  统一升到 **2.4.0**。
+- **API.md**：补充 `engine` keyword-only 内部预览的入参/默认值/错误说明，并链接两份专题文档。
+- **CI**：Ruff job 从警告模式切换为门禁（v2.2.0 / v2.3.0 连续两个版本全绿且
+  `per-file-ignores` 为 0，满足 `ENGINEERING_STANDARDS.md` 第 2.2 / 14.1 节的切换条件）；
+  pytest 3.11 / 3.12 矩阵与 `requirements-dev.txt` 不变。
+- **README / USER_GUIDE / 已知限制**：补 v2.4.0 改动、Polars 内部预览限制与双引擎文档入口。
+
+### 已知差异与回落清单（摘要）
+
+共 10 条登记（9 条回落、1 条已对齐），无「待定 / 未知」项，无 `accepted_difference`。
+完整权威表见 `cleaning/engine/known_differences.py` 与 `docs/ENGINE_ALIGNMENT.md`：
+
+- **R5 转数字**（KD-0001 ~ KD-0004）：货币符号/百分号、超过 15 位有效数字的长编号、
+  溢出、混合列边界整条流水线回落 pandas；
+- **R6 转日期**（KD-0005 ~ KD-0006）：混合格式、混时区不猜格式，整条流水线回落 pandas；
+- **R8 计算列**（KD-0007）：`//`、`%`、`**` 边界与常量幂守卫回落；
+- **引擎级**（KD-0009 / KD-0011）：`sample > 0`、混合 object 列、带时区 datetime
+  等无法无损映射的 dtype 预检回落；
+- **已对齐**（KD-0010）：Polars 执行后按原 dtype 回填 pandas，L1/L2/L3 一致，
+  仅内部 null/NaN 表示不同且不可见。
+
+**回退原则**：默认路径隔离、计划期整条流水线回落、运行期异常按用户错误处理、
+不做静默重跑；`sample > 0` 统一回落 pandas 以保证样例与删除原因一致。
+
+### 明确未做（本版不承诺）
+
+- 不做 lazy / streaming；
+- 不做行级血缘；
+- 不做性能目标（不承诺 500 万行、不承诺内存下降 60%）；P1 benchmark 只作信息性记录；
+- 不把 Polars 暴露为 CLI / HTTP API / UI 选项，不新增公共导出；
+- 本轮不打 tag、不发布；pillow 既有漏洞按单独评审处理，不在本 PR。
+
+### 测试与质量基线（2026-11-07 实跑）
+
+- `python -m pytest -q -rs`：**557 passed，0 skipped**。
+- `python -m pytest --collect-only -q`：**557 tests collected**。
+- `ruff format --check .` 通过；`ruff check .`：`All checks passed!`。
+- `mypy`（`cleaning/` + `api/`，非严格）：**Found 4 errors in 1 file**，仍是
+  EX-001 ~ EX-004 的存量 `transform.py` 错误，本版 0 新增。
+- `coverage report --include='cleaning/*'`：**95%**（3131 statements / 142 missed，目标 ≥94%）；
+  新增引擎/DSL 模块 95%–100%。
+- 双引擎真实数据校验：`benchmarks/verify_engines.py` 在真实小（1 万）/中（10 万）/大（50 万）三档数据上比较，pandas 与 Polars 的 DataFrame、steps、notes、removed 与 CSV 字节完全一致；三档标准流水线均按登记表在 R5 / R6 / R8 边界整条回落 pandas（实际引擎 pandas，无静默切换）。
+- P1 benchmark（信息性，3 次中位数，见 `benchmarks/ENGINE_BENCHMARK.md`）：
+  pandas 小 **0.290 s** / 中 **2.446 s** / 大 **11.755 s**；Polars 小 **0.580 s** /
+  中 **2.729 s** / 大 **12.821 s**。pandas 相对 v2.3.0 基线（0.281 / 2.408 / 11.826 s）为
+  +3.2% / +1.6% / -0.6%，均未超过 10% 回退门禁；Polars 数字包含转换开销，只作信息性记录。
+- 回退演练：未安装 Polars 时默认公共 API / CLI / 批量完整可用；显式 `engine="polars"`
+  抛中文 `TableError`，已验证不静默回落。
+
+### 已知限制与未完成项
+
+- **Polars 是内部预览**：不进入 CLI / HTTP API / Streamlit / 批量；已知差异见上表与
+  `docs/ENGINE_ALIGNMENT.md`，v3.0 前重新评审。
+- **未设性能门禁**：Polars 结果包含 pandas↔Polars 转换开销，不能解释为 v3.0 性能；
+  大档在 8 GB 环境下可能吃紧。
+- **未做 lazy / streaming、行级血缘**：留 v3.0。
+- **未发布**：v2.4.0 tag 与正式发布由人工在本 PR 合并后确认；本 PR 只做发布准备。
+- **pip-audit 未接入 CI**：规范列为目标，本版未加 workflow 依赖审计门禁。实现期临时运行
+  `pip-audit -r requirements-dev.txt`：48 个依赖中只有既有 `pillow 12.3.0` 命中 39 条
+  漏洞（13.0.0 修复）；按 issue 范围「pillow 既有漏洞处理单独评审，不在本 PR」，本版未升级、
+  未把它写成已解决；新增的 `polars` / `jsonschema` 未命中漏洞。
+- **Python 3.11 本地未实跑**：本机只有 3.12；CI 矩阵覆盖 3.11。
+- **mypy 仍有 4 条存量错误**：未通过改逻辑或 `Any` 压掉，属 EX-001 ~ EX-004 棘轮还债项。
+
 ## [2.3.0] — 2026-11-07
 
 > 只变形态，不动清洗语义：把 v3 路线图「v2.2 过渡版」里 v2.2.0 未完成的 CLI、API 雏形、

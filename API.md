@@ -1,4 +1,4 @@
-# 公共 API 清单（v2.3.0）
+# 公共 API 清单（v2.4.0）
 
 > 权威来源：`cleaning/__init__.py` 的 `__all__`。本文件逐项说明用途与入参/出参约定；
 > `__all__` 之外的名字一律视为内部实现，不承诺兼容。旧版 `from cleaning import ...`
@@ -18,7 +18,7 @@
 
 | 名字 | 用途 |
 | --- | --- |
-| `__version__` | 包版本字符串，当前 `2.3.0` |
+| `__version__` | 包版本字符串，当前 `2.4.0` |
 | `MAX_UPLOAD_BYTES` / `MAX_ROWS` / `MAX_COLS` / `MAX_CELLS` / `MAX_XLSX_UNCOMPRESSED_BYTES` | 现行默认上限常量；运行时可被 `TABLE_CLEANER_*` 环境变量覆盖 |
 | `API_MAX_JOBS` / `API_MAX_BODY_BYTES` / `API_READ_TIMEOUT_SECONDS` | 本地 HTTP API 雏形的内存任务数、请求体上限、正文读取超时 |
 | `EXCEL_MAX_ROWS` / `EXCEL_MAX_COLS` | Excel 格式硬上限，导出时使用 |
@@ -48,7 +48,7 @@
 | `CleanReport(df, steps, removed, notes)` | 清洗结果：数据、每步删行数、被删样例、说明 |
 | `find_missing(df)` / `missing_mask(df)` / `find_suspicious(df)` / `summarize(df)` | 检查空值、可疑格式、前后统计 |
 | `clean_data(df, ...)` | 只按行规则清洗，返回 DataFrame |
-| `clean_report(df, ...)` / `clean_table(df, options, ...)` | 行清洗 + 列变换；`clean_table` 是入口层推荐用法 |
+| `clean_report(df, ...)` / `clean_table(df, options, ..., engine="pandas")` | 行清洗 + 列变换；`clean_table` 是入口层推荐用法。`engine` 是 v2.4.0 内部预览：默认 `pandas`，可选 `polars`；CLI/API/UI 不传 |
 | `make_sample_df()` | 虚构样例数据 |
 | `CleanOptions` / `ColumnOps` | 唯一规则载体；默认空 = 不做任何清洗/列变换 |
 | `apply_transforms(df, ops)` | 按「删列 → 转换 → 重命名 → 计算列 → 列顺序」应用列变换 |
@@ -103,13 +103,25 @@
 | --- | --- |
 | `CleanResult` | 编程式清洗结果：来源文件名、建议输出名、文件字节、前后行数、步骤、说明、报告文本 |
 | `InspectResult` | 只检查结果：行列、列名、空值、重复行、可疑格式、读取说明、报告文本 |
-| `clean_bytes(filename, data, options, ...)` | 对内存中的文件字节执行一次完整清洗并导出 |
+| `clean_bytes(filename, data, options, ..., engine="pandas")` | 对内存中的文件字节执行一次完整清洗并导出。`engine` 同上，默认 `pandas`；未安装 Polars 时显式请求 `polars` 抛中文 `TableError`，不静默回落 |
 | `inspect_bytes(filename, data, ...)` | 只检查不清洗，返回结构化结果与中文报告 |
 | `render_report(result)` | 把 `CleanResult` / `InspectResult` 渲染成终端/Markdown 可读文本 |
 | `options_from_rules(rules)` | 模板规则字典 → `CleanOptions` |
 
 HTTP 入口不在 `__all__` 内，通过 `python -m api.http_api` 或 console script
 `table-cleaner-api` 启动；接口说明见 `README.md` 的「API 雏形」章节。
+
+### 8.1 引擎关键字（v2.4.0 内部预览）
+
+- `engine` 是 `clean_table` / `clean_bytes` 的 keyword-only 参数，默认 `"pandas"`；
+  默认值与显式 `"pandas"` 走 v2.3.0 的现行实现，不 import 引擎包、不依赖 Polars。
+- 可选 `"polars"` 仅用于内部/测试预览；显式请求但环境未安装 Polars 时抛中文
+  `TableError`，提示安装可选依赖，不会静默改用 pandas。
+- 能力表或执行前预检判定必须回落的节点，整条流水线改走 pandas，计划描述标记
+  `effective_engine=pandas`；`sample > 0` 统一回落 pandas 以保持样例与删除原因一致。
+- `run_batch`、CLI、HTTP API、Streamlit 不新增引擎参数/字段；`cleaning.__all__` 不增删。
+- 双引擎摘要、17 项能力状态与已知差异见 [`docs/ENGINE_ALIGNMENT.md`](docs/ENGINE_ALIGNMENT.md)；
+  Pipeline DSL v1 见 [`docs/PIPELINE_DSL.md`](docs/PIPELINE_DSL.md)（内部模块，不进 `__all__`）。
 
 ## 9. HTTP API 雏形（无鉴权，仅本机/内网）
 

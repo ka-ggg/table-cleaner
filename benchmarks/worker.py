@@ -38,8 +38,11 @@ def standard_options() -> cleaning.CleanOptions:
     )
 
 
-def run_once(dataset: Path, output: Path) -> dict[str, object]:
-    """跑一次读取→清洗→导出，返回各项耗时（秒）与进程内存峰值（MB）。"""
+def run_once(dataset: Path, output: Path, *, engine: str = "pandas") -> dict[str, object]:
+    """跑一次读取→清洗→导出，返回各项耗时（秒）与进程内存峰值（MB）。
+
+    ``engine`` 只用于 P1 信息性对比（pandas / polars）；不设性能门禁，默认仍是 pandas。
+    """
     limits = Limits.from_env().with_overrides(max_upload_bytes=_BENCH_UPLOAD_BYTES)
     started = time.perf_counter()
     read_started = started
@@ -48,7 +51,7 @@ def run_once(dataset: Path, output: Path) -> dict[str, object]:
     read_seconds = time.perf_counter() - read_started
 
     clean_started = time.perf_counter()
-    report = cleaning.clean_table(loaded.df, standard_options())
+    report = cleaning.clean_table(loaded.df, standard_options(), engine=engine)
     clean_seconds = time.perf_counter() - clean_started
 
     export_started = time.perf_counter()
@@ -61,6 +64,7 @@ def run_once(dataset: Path, output: Path) -> dict[str, object]:
     peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     return {
         "dataset": dataset.stem,
+        "engine": engine,
         "rows": int(len(report.df)),
         "rows_before": int(len(loaded.df)),
         "input_bytes": len(raw),
@@ -77,9 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="benchmark 单次运行器（一般由 benchmarks.run 调用）")
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--engine",
+        choices=("pandas", "polars"),
+        default="pandas",
+        help="清洁引擎；默认 pandas。Polars 结果只作信息性对比，不设性能门禁。",
+    )
     args = parser.parse_args(argv)
     try:
-        result = run_once(args.dataset, args.output)
+        result = run_once(args.dataset, args.output, engine=args.engine)
     except (cleaning.TableError, OSError) as exc:
         sys.stderr.write(f"benchmark 失败：{exc}\n")
         return 1
