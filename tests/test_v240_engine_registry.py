@@ -325,15 +325,18 @@ def test_pandas_engine_apply_transforms_matches_direct_transform():
     assert actual_notes == expected_notes
 
 
-def test_public_entry_signatures_have_no_engine_keyword_in_this_pr():
-    """W5 才接 engine 关键字；本 PR 的公共入口签名必须保持原样。"""
+def test_public_entry_signatures_only_add_optional_engine_keyword():
+    """W5 只给 clean_table / clean_bytes 追加带默认值的 keyword-only ``engine``。"""
     clean_table_parameters = inspect.signature(cleaning.clean_table).parameters
-    assert list(clean_table_parameters) == ["df", "options", "sample", "progress", "deadline"]
-    assert clean_table_parameters["sample"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert "engine" not in clean_table_parameters
+    assert list(clean_table_parameters) == ["df", "options", "sample", "progress", "deadline", "engine"]
+    for name in ("sample", "progress", "deadline", "engine"):
+        assert clean_table_parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+    assert clean_table_parameters["engine"].default == "pandas"
 
     clean_bytes_parameters = inspect.signature(cleaning.clean_bytes).parameters
-    assert "engine" not in clean_bytes_parameters
+    assert list(clean_bytes_parameters)[-1] == "engine"
+    assert clean_bytes_parameters["engine"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert clean_bytes_parameters["engine"].default == "pandas"
     assert "engine" not in inspect.signature(cleaning.clean_report).parameters
     assert "engine" not in inspect.signature(cleaning.run_batch).parameters
 

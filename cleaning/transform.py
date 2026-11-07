@@ -464,8 +464,26 @@ def clean_table(
     sample: int = 0,
     progress: Callable[[int, int], None] | None = None,
     deadline: Deadline | None = None,
+    engine: str = "pandas",
 ) -> CleanReport:
-    """行清洗 + 列变换一次做完，返回带说明的 CleanReport（界面和批量共用）。"""
+    """行清洗 + 列变换一次做完，返回带说明的 CleanReport（界面和批量共用）。
+
+    ``engine`` 是 v2.4.0 的内部预览关键字：默认 ``"pandas"`` 直接走现行实现，与
+    v2.3.0 行为逐字节一致；显式传 ``"polars"`` 才惰性 import 可选引擎。入口层
+    （CLI / HTTP API / 界面 / 批量）不传该参数，默认路径也不 import 引擎模块，
+    因此未安装 Polars 的默认安装完全不受影响。
+    """
+    if str(engine or "").strip().lower() != "pandas":
+        # 延迟 import：默认 pandas 路径不加载引擎包，也不触发可选依赖检查。
+        from .engine import get_engine
+
+        return get_engine(engine).clean_table(
+            df,
+            options,
+            sample=sample,
+            progress=progress,
+            deadline=deadline,
+        )
     report = clean_report(
         df,
         drop_duplicates=options.drop_duplicates,

@@ -92,11 +92,14 @@ def clean_bytes(
     number_mode: str = "text",
     timeout: float | None = None,
     limits: Limits | None = None,
+    engine: str = "pandas",
 ) -> CleanResult:
     """清洗内存中的文件字节并导出，返回结果字节与报告素材。
 
     参数与界面/批量共用同一套语义：``options`` 是唯一规则载体，``limits`` 是统一
     上限配置；读取、清洗、导出任一步的用户可预见错误都以中文 ``TableError`` 抛出。
+    ``engine`` 是 v2.4.0 的内部预览关键字：默认 ``"pandas"``，显式 ``"polars"``
+    才走可选引擎；CLI / HTTP API / 界面不传该参数。
     """
     fmt = str(export_format or "csv").strip().lower()
     if fmt not in ("csv", "xlsx"):
@@ -108,7 +111,7 @@ def clean_bytes(
         timeout=timeout,
         limits=limits,
     )
-    report = clean_table(loaded.df, options, deadline=Deadline(timeout))
+    report = clean_table(loaded.df, options, deadline=Deadline(timeout), engine=engine)
     if fmt == "xlsx":
         content = to_xlsx_bytes(report.df, number_mode=number_mode)
     else:
