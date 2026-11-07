@@ -643,7 +643,8 @@ def _clean_report_polars(
 def _numeric_expression(column: str) -> pl.Expr:
     """与 ``numeric_series`` 同义：去空白、只去合法千分位逗号、转 Float64。"""
     text = pl.col(column).cast(_STRING_DTYPE, strict=False).str.strip_chars()
-    thousands = text.str.contains(_THOUSANDS_RE.pattern)
+    # 与 pandas 的 str.fullmatch 一致：必须整格匹配，不能在子串里去掉逗号。
+    thousands = text.str.contains(rf"^(?:{_THOUSANDS_RE.pattern})$")
     text = pl.when(thousands).then(text.str.replace_all(",", "")).otherwise(text)
     return text.cast(pl.Float64, strict=False)
 
