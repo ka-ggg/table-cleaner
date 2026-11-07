@@ -1,4 +1,4 @@
-# 表格清洗小工具 · 用户使用说明（v2.2.0）
+# 表格清洗小工具 · 用户使用说明（v2.3.0）
 
 > 这份说明写给**不写代码、平时只 Excel 的人**。照着做就能把一张乱表整理干净并导出。
 > 全程在浏览器里点，不装 Excel 插件，不改你的原文件。
@@ -173,6 +173,31 @@ python -m streamlit run app.py
 
 模板**只存规则**（列名、勾选项），不含你的数据。
 
+## 5.5 命令行（CLI 预览版，可选）
+
+v2.3.0 起可以在终端里用 `table-cleaner` 完成和网页版相同的读取、清洗、导出；
+参数兼容承诺自 v3.0 起算，本版是预览版。
+
+```bash
+python -m pip install .                                   # 安装后才有 table-cleaner 命令
+table-cleaner clean 订单.csv --template 模板.json -o 清洗后.csv --report 报告.md
+table-cleaner inspect 订单.xlsx                            # 只检查，不生成清洗文件
+table-cleaner template 模板.json --check                   # 校验模板字段与版本
+table-cleaner batch ./订单目录 --template 模板.json --out-dir ./清洗结果
+```
+
+- 不传模板时可以用开关：`--drop-duplicates`、`--dedupe-on`、`--drop-missing-in`、
+  `--rename 旧=新`、`--drop-cols`、`--order`、`--to-number`、`--to-date`、
+  `--computed 新列=表达式`。
+- 输出文件默认不覆盖，已存在时加 `--force`。
+- 退出码：0 成功；1 输入/数据错误；2 参数用法错误；3 内部错误。
+  错误只显示中文提示，不会把英文堆栈丢给用户。
+- 只看某个子命令的全部参数：`table-cleaner clean --help`。
+
+本版还提供一个本地 HTTP API 雏形（`table-cleaner-api`），只做提交清洗、取结果、取报告三件事。
+它**没有鉴权**，只适合本机或可信内网，任务只存在内存里；详细说明见 `README.md` 的「API 雏形」和 `API.md`。
+在线 Demo 本版未提供。
+
 ## 6. 导出文件说明
 
 | 格式 | 特点 | 什么时候用 |
@@ -214,7 +239,7 @@ python -m streamlit run app.py
 
 ## 10. 版本与反馈
 
-- 页面标题下方显示版本号（当前 **v2.2.0**）；
+- 页面标题下方显示版本号（当前 **v2.3.0**）；
 - 报问题时请提供：版本号、你点了哪几步、页面上的**中文提示原文**、
   文件大概多少行多少列、是 CSV 还是 XLSX。
 - **不要**直接把包含个人信息/客户名单的原始表格发给客服；用虚构数据或删掉敏感列后的文件复现即可。

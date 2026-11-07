@@ -170,7 +170,8 @@ def _parse_document(data: bytes | str) -> dict[str, Any]:
         document = json.loads(text)
     except json.JSONDecodeError as exc:
         raise TableError(
-            f"模板文件不是有效的 JSON（{exc.msg}，第 {exc.lineno} 行）；请重新下载模板，或用文本编辑器检查逗号和引号。"
+            f"模板文件不是有效的 JSON（第 {exc.lineno} 行第 {exc.colno} 列附近）；"
+            "请重新下载模板，或用文本编辑器检查逗号和引号。"
         ) from None
     if not isinstance(document, dict):
         raise TableError("模板文件里应是一个 JSON 对象，请用本工具导出的模板。")

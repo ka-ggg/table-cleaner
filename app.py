@@ -77,7 +77,7 @@ def sidebar_settings() -> tuple[cleaning.Limits, float | None]:
                 "处理超时（秒，0 = 不限）",
                 min_value=0,
                 max_value=86_400,
-                value=int(cleaning.DEFAULT_TIMEOUT_SECONDS),
+                value=int(defaults.timeout_seconds),
                 step=10,
                 key="上限_超时",
             )
@@ -795,8 +795,8 @@ def main() -> None:
 - **防护的边界**：无法覆盖所有电子表格版本和宏场景；来源不明的文件仍需先核对内容再打开。
 - **资源限制**：单文件 {limits.max_upload_mb} MB、行数 {limits.max_rows:,}、列数
   {limits.max_cols:,}、单元格 {limits.max_cells:,} 个；XLSX 解压后 {limits.max_xlsx_uncompressed_mb} MB；
-  单次处理默认超时 {int(cleaning.DEFAULT_TIMEOUT_SECONDS)} 秒（左侧可调）。超过 10 万行默认分块清洗并显示进度。
-- **测试**：本版 214 项自动化测试（逻辑 182 + 界面 32）覆盖主要流程，
+  单次处理默认超时 {int(limits.timeout_seconds)} 秒（左侧可调）。超过 10 万行默认分块清洗并显示进度。
+- **测试**：本版 306 项自动化测试（v2.2 既有 214 + v2.3 新增 92）覆盖主要流程，
   但工具只做通用格式检查，不保证业务数据完全正确——重要数据请导出前人工核对。
 """
         )

@@ -1,9 +1,129 @@
 # 测试报告（TEST_REPORT）
 
-- 报告日期：2026-10-20
-- 被测版本：**v2.0.1**（修复前基线 v2.0.0）
+- 报告日期：2026-11-07（v2.3.0 追加）；第 1–9 节为 v2.0.1 历史记录
+- 被测版本：**v2.3.0**（历史基线 v2.0.1）
 - 测试环境：Android 16 容器（aarch64，vivo V2403A，16 GB 内存），Python 3.12.3
 - 说明：本报告里的数字全部来自实际命令输出；没跑的一律写「未执行」，不编造。
+
+---
+
+## 0. v2.3.0 测试补充（2026-11-07）
+
+> 本节是 v2.3.0 的实测追加；下方第 1–9 节保持 v2.0.1 时的历史记录，不覆盖、不改写。
+
+### 0.1 环境
+
+| 项目 | 值 |
+| --- | --- |
+| 日期 | 2026-11-07 |
+| 操作系统 | Linux（容器） |
+| Python | 3.12.3 |
+| pytest | 9.2.0 |
+| pandas | 3.1.1 |
+| numpy | 2.5.4 |
+| openpyxl | 3.1.5 |
+| streamlit | 1.66.0 |
+| Ruff | 0.17.4 |
+| mypy | 2.4.1 |
+| 内存 | 7934 MB（4 核） |
+
+### 0.2 全量测试两遍
+
+```text
+$ python -m pytest -q -rs
+306 passed, 52 warnings in 36.63s
+
+$ python -m pytest -q -rs
+306 passed, 52 warnings in 30.74s
+
+$ python -m pytest --collect-only -q | tail -1
+306 tests collected in 1.78s
+```
+
+两遍通过数/总数一致，均为 **306 passed / 0 skipped**；未删既有测试，新增 92 项。
+
+### 0.3 各文件数量
+
+| 文件 | 收集数 | 说明 |
+| --- | ---: | --- |
+| `tests/test_app_logic.py` | 89 | v1.x 逻辑（未改） |
+| `tests/test_v2_features.py` | 75 | v2.0.0 新功能（仅改版本断言期望值） |
+| `tests/test_regressions_v201.py` | 18 | v2.0.1 回归（仅改版本断言期望值） |
+| `tests/test_app_ui.py` | 18 | v1.x 界面（未改） |
+| `tests/test_app_ui_v2.py` | 14 | v2 界面 + v2.0.1 回归（未改） |
+| `tests/test_v23_limits.py` | 6 | Limits 配置对象、默认值、环境变量 |
+| `tests/test_v23_batch.py` | 3 | batch 纯函数边界 |
+| `tests/test_v23_public_api.py` | 3 | app.py 只走公共 API、`__all__` 完整性 |
+| `tests/test_v23_service.py` | 6 | 编程式入口与报告 |
+| `tests/test_v23_templates.py` | 13 | template_version 兼容与逐单元格一致 |
+| `tests/test_v23_cli.py` | 30 | CLI 四子命令、退出码、中文错误 |
+| `tests/test_v23_api.py` | 25 | HTTP API 三件事、坏请求超时与错误路径 |
+| `tests/test_v23_benchmark.py` | 6 | benchmark 数据形态与基线表格 |
+| **合计** | **306** | 214 既有 + 92 新增 |
+
+### 0.4 CLI 实跑
+
+| 场景 | 退出码 | 结果摘要 |
+| --- | ---: | --- |
+| `clean` 样例 CSV + 模板 + 报告 | 0 | 4 → 3 行，输出 CSV 与中文报告 |
+| `inspect` 样例双表 XLSX | 0 | 读出「Sales & Marketing」2 行 2 列，输出中文检查报告 |
+| `template --check` | 0 | 识别 `template_version: 1`，输出规则摘要 |
+| `batch samples/` | 0 | 2/2 成功，生成 ZIP |
+| 坏文件（0 字节 CSV） | 1 | 「文件是空的（0 字节）…」，无堆栈 |
+| 坏模板（坏 JSON） | 1 | 「模板文件不是有效的 JSON（第 1 行第 1 列附近）…」，无堆栈 |
+| 缺参数 | 2 | 「缺少必填参数：input, -o/--output」 |
+| 输出已存在 | 2 | 「输出文件已存在…加 --force」 |
+
+### 0.5 HTTP API 实跑
+
+| 请求 | 结果 |
+| --- | --- |
+| `POST /api/jobs`（样例 CSV + 模板） | 201，返回 `job_id`，行数 4 → 3 |
+| `GET /api/jobs/{id}/result` | 200，`text/csv; charset=utf-8`，125 字节 |
+| `GET /api/jobs/{id}/report` | 200，`steps = {"删除完全重复的行": 1}`，报告首行 `# 清洗报告` |
+| 半截正文（声明 `Content-Length: 9`、发 0 字节） | 400，中文提示「请求体不完整或读取超时」，不再挂住 handler 线程 |
+
+API 结果与公共 API `clean_bytes` 对同一输入的输出逐字节一致；无鉴权，仅本机调用。
+另有并发回归用例确认：一个半截请求挂起时，后续正常请求仍能返回 201。
+
+### 0.6 质量命令
+
+```text
+$ ruff format --check .
+31 files already formatted
+
+$ ruff check .
+All checks passed!
+
+$ mypy
+Found 4 errors in 1 file (checked 14 source files)   # EX-001~EX-004，存量基线
+
+$ coverage run -m pytest -q
+306 passed, 52 warnings in 48.60s
+$ coverage report --include='cleaning/*'
+TOTAL   1595    99   94%
+```
+
+### 0.7 benchmark（首版基线，median of 3）
+
+| 数据集 | 输入行数 | 端到端(s) | 读取(s) | 清洗(s) | 导出(s) | 进程内存峰值(MB) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| small | 10,000 | 0.281 | 0.038 | 0.183 | 0.060 | 133.2 |
+| medium | 100,000 | 2.408 | 0.282 | 1.607 | 0.518 | 212.6 |
+| large | 500,000 | 11.826 | 1.375 | 7.831 | 2.577 | 532.7 |
+
+完整环境、每次明细与协议见 `benchmarks/BASELINE.md`。
+
+### 0.8 未执行（v2.3.0）
+
+| 项 | 状态 | 原因 |
+| --- | --- | --- |
+| 手机真机人工验收 | **未执行** | 容器读屏/截图不可用、端口不可达；不用桌面端测试替代 |
+| 干净环境 `pip install .`（构建隔离） | **未执行** | 无网络，无法拉取构建依赖 setuptools；现有 venv 用 `--no-build-isolation` 验证 console script |
+| Python 3.11 本地实跑 | **未执行** | 本机只有 3.12；CI 配置覆盖 |
+| coverage 门禁 | **未设** | 本版已重测 **94%**（1595 statements / 99 missed），高于 93% 基线；按标准只公布、不拦截 |
+| pip-audit | **未执行** | 本版未接入 CI |
+| 在线 Demo | **未提供** | 无托管环境，未部署、未编造链接 |
 
 ---
 

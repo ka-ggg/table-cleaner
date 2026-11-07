@@ -20,6 +20,7 @@
 | --- | --- |
 | `__version__` | 包版本字符串，当前 `2.3.0` |
 | `MAX_UPLOAD_BYTES` / `MAX_ROWS` / `MAX_COLS` / `MAX_CELLS` / `MAX_XLSX_UNCOMPRESSED_BYTES` | 现行默认上限常量；运行时可被 `TABLE_CLEANER_*` 环境变量覆盖 |
+| `API_MAX_JOBS` / `API_MAX_BODY_BYTES` / `API_READ_TIMEOUT_SECONDS` | 本地 HTTP API 雏形的内存任务数、请求体上限、正文读取超时 |
 | `EXCEL_MAX_ROWS` / `EXCEL_MAX_COLS` | Excel 格式硬上限，导出时使用 |
 | `CHUNK_ROWS` / `CHUNK_THRESHOLD_ROWS` / `DEFAULT_TIMEOUT_SECONDS` | 分块与硬超时默认值 |
 | `Limits` | 统一配置对象（NamedTuple）：上传字节、行/列/单元格、XLSX 解压上限、超时、分块；提供 `with_overrides()`、`from_env()` |
@@ -107,7 +108,7 @@
 | `render_report(result)` | 把 `CleanResult` / `InspectResult` 渲染成终端/Markdown 可读文本 |
 | `options_from_rules(rules)` | 模板规则字典 → `CleanOptions` |
 
-HTTP 入口不在 `__all__` 内，通过 `python -m cleaning.http_api` 或 console script
+HTTP 入口不在 `__all__` 内，通过 `python -m api.http_api` 或 console script
 `table-cleaner-api` 启动；接口说明见 `README.md` 的「API 雏形」章节。
 
 ## 9. HTTP API 雏形（无鉴权，仅本机/内网）
@@ -120,4 +121,5 @@ HTTP 入口不在 `__all__` 内，通过 `python -m cleaning.http_api` 或 conso
 
 - 默认只监听 `127.0.0.1:8765`，**没有鉴权**，不要直接暴露到公网。
 - 任务只存在进程内存，最多保留 20 个（FIFO），服务重启即丢；不做队列/持久化。
-- 所有错误返回中文 JSON：`{"错误": "..."} `；请求体上限默认 32 MB（`TABLE_CLEANER_API_MAX_BODY_MB`）。
+- 所有错误返回中文 JSON：`{"错误": "..."}`；请求体上限默认 32 MB（`TABLE_CLEANER_API_MAX_BODY_MB`）。
+- 正文读取默认 5 秒超时（`TABLE_CLEANER_API_READ_TIMEOUT_SECONDS`）；半截正文/超时返回中文 400，不会挂住线程。

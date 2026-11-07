@@ -131,7 +131,9 @@ def to_xlsx_bytes(df: pd.DataFrame, number_mode: str = "text") -> bytes:
     if mode not in NUMBER_MODES:
         raise TableError(f"编号导出模式「{number_mode}」不认识；可选：text（强制文本）、number（尝试转数字）。")
     if len(df) > EXCEL_MAX_ROWS - 1 or df.shape[1] > EXCEL_MAX_COLS:
-        raise TableError("数据超出了 Excel 的上限（1048576 行 / 16384 列，含表头），请改用 CSV 下载。")
+        raise TableError(
+            f"数据超出了 Excel 的上限（{EXCEL_MAX_ROWS} 行 / {EXCEL_MAX_COLS} 列，含表头），请改用 CSV 下载。"
+        )
     out = numbers_where_possible(df) if mode == "number" else df
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:

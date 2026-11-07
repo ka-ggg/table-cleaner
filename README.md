@@ -1,11 +1,41 @@
 # 表格清洗小工具
 
-**当前版本：v2.2.0（214 项自动化测试 = 182 项逻辑 + 32 项界面）**
+**当前版本：v2.3.0（306 项自动化测试 = 214 项 v2.2 既有基线 + 92 项 v2.3 新增）**
 
 帮小商家和办公人员快速清理 CSV / XLSX：检查空值、重复行和可疑格式，按需删行、改列、算新列，
 一次处理多张工作表或多个文件，导出干净文件。中文界面，按手机屏幕适配；
-没有登录、数据库、支付和外部接口。
+没有登录、数据库、支付和外部接口。v2.3.0 起还可以脱离网页，用命令行（预览版）或
+Python 公共 API 调用同一套清洗逻辑。
 （手机浏览器里的**人工**验收本轮未完成，原因见「真机验收清单」最后一节，不当作已通过项。）
+
+> 公共 API 清单见 [`API.md`](API.md)；benchmark 首版基线见 [`benchmarks/BASELINE.md`](benchmarks/BASELINE.md)。
+> 命令行是**预览版**，参数兼容承诺自 v3.0 起算。
+
+## v2.3.0 的改动（当前版本）
+
+> 只变形态，不动清洗语义：清洗判定规则、默认值和导出行为与 v2.2.0 完全一致；
+> 214 项既有测试全部保留并通过，新增 92 项测试。
+
+- **limits 统一配置对象**：`cleaning/limits.py` 的 `Limits` 现在是界面、CLI、HTTP API 共用的唯一配置对象；
+  默认值与 v2.2.0 逐项一致（10 MB / 500,000 行 / 1,000 列 / 2,000,000 单元格 / XLSX 200 MB / 超时 60 秒），
+  `TABLE_CLEANER_*` 环境变量覆盖名不变。
+- **batch 纯函数化**：`run_batch` 只接收 `BatchJob` 序列、`CleanOptions`、导出参数与上限配置，
+  不感知 Streamlit 控件或会话状态；单项处理拆成纯函数并补不变量测试。
+- **app.py 只调公共 API**：界面不再直接 import `cleaning` 的内部模块，全部走 `cleaning/__init__.py`
+  的 `__all__`；新增自动化边界测试防止开后门。
+- **CLI 预览版**：新增 `table-cleaner` 命令，含 `clean` / `inspect` / `template` / `batch` 四个子命令；
+  退出码 0 成功 / 1 输入数据错误 / 2 参数用法错误 / 3 内部错误，错误只提示中文。
+- **API 雏形**：新增标准库本地 HTTP 入口 `table-cleaner-api`，只做提交清洗、取结果、取报告三件事；
+  **无鉴权，仅本机/可信内网**，任务只存内存，不做账号、权限、队列或持久化。
+- **模板格式版本**：保存模板时写入整数 `"template_version": 1`；字段缺失按旧模板（版本 0）正常读入；
+  更高版本给中文提示但不崩溃；新旧模板对同一输入的输出逐单元格一致，有自动化用例。
+- **benchmark 首版基线**：`benchmarks/` 提供固定随机种子的数据生成、标准流水线和运行脚本，
+  小/中/大三档各跑 3 次取中位数，结果写入 `benchmarks/BASELINE.md`；本版只建基线，不设提升目标。
+- **测试补强**：新增 CLI（四子命令 + 坏文件退出码 + 中文提示）、API（三件事 + 错误路径）、
+  limits 配置对象、template_version 兼容、benchmark 冒烟、公共 API 边界测试，总数 306，全过。
+
+未提供在线 Demo、真机验收未执行、mypy 仍有 4 条存量错误等，见 `CHANGELOG.md` 的
+「已知限制与未完成项」，不写成已完成。
 
 ## v2.0.1 的改动（行为基线：只修 bug，不加功能）
 
@@ -191,20 +221,25 @@
 table-cleaner/
 ├── app.py                    # Streamlit 界面：上传/检查/清洗/进阶列操作/导出/批量/模板
 ├── cleaning/                 # 清洗逻辑（普通函数，不依赖 Streamlit，便于测试）
-│   ├── __init__.py           # 对外接口 + 文档 + 版本号（旧 API 全部保留）
-│   ├── limits.py             # 所有 MAX_* 上限、分块/超时默认值、环境变量覆盖
+│   ├── __init__.py           # 公共 API 清单（__all__）+ 文档 + 版本号（旧 API 全部保留）
+│   ├── limits.py             # Limits 统一配置对象、MAX_* 上限、环境变量覆盖
 │   ├── errors.py             # TableError（中文提示）、Deadline（协作式超时）
 │   ├── xlsx_scan.py          # XLSX 流式预检：解压体积、真实行列、工作表名、选表
 │   ├── io.py                 # 读写入口：编码/分隔符识别、表头行、空表头规范化
 │   ├── rules.py              # 判定与行清洗：缺失值、重复行、可疑格式、公式判断、分块删行
 │   ├── transform.py          # 列变换：改名/删列/调顺序/类型转换/计算列（安全表达式）
 │   ├── export.py             # CSV/XLSX/ZIP 导出、三种公式防护、编号模式、文件名
-│   ├── templates.py          # 规则模板 JSON 的读写校验、按当前列过滤
-│   └── batch.py              # 多张工作表 / 多个文件 → 逐一清洗 → 打包 ZIP
+│   ├── templates.py          # 规则模板 JSON、template_version 版本识别与校验
+│   ├── batch.py              # 多张工作表 / 多个文件 → 逐一清洗 → 打包 ZIP
+│   ├── service.py            # 编程式入口：clean_bytes / inspect_bytes / 报告渲染
+│   └── cli.py                # table-cleaner 命令行（clean/inspect/template/batch）
+├── api/http_api.py           # table-cleaner-api 本地 HTTP 雏形（独立入口层，无鉴权）
+├── benchmarks/               # benchmark 套件：生成脚本、运行器、BASELINE.md
+├── API.md                    # 公共 API 清单 + HTTP 接口说明
 ├── samples/                  # 真机验收用的虚构样例（分号 CSV + 双表 XLSX）
 ├── requirements.txt          # 运行依赖（streamlit / pandas / openpyxl）
 ├── requirements-dev.txt      # 测试与工程工具依赖（含 streamlit 1.66.0 / ruff / mypy / coverage）
-├── pyproject.toml            # 打包元数据 + Ruff / mypy / coverage 配置
+├── pyproject.toml            # 打包元数据、console scripts + Ruff / mypy / coverage 配置
 ├── ENGINEERING_STANDARDS.md  # 工程标准与细节要求（常设规范）
 ├── LICENSE                   # MIT 许可证
 ├── pytest.ini                # 让 pytest 能 import 包与 app
@@ -218,7 +253,15 @@ table-cleaner/
     ├── test_app_ui.py        # 18 项：v1.x 端到端界面（原样保留）
     ├── test_v2_features.py   # 75 项：v2.0.0 新功能逻辑
     ├── test_regressions_v201.py  # 18 项：v2.0.1 修复的 11 个代码缺陷的回归测试
-    └── test_app_ui_v2.py     # 14 项：v2 新功能 + v2.0.1 界面回归
+    ├── test_app_ui_v2.py     # 14 项：v2 新功能 + v2.0.1 界面回归
+    ├── test_v23_limits.py    # 6 项：Limits 配置对象、默认值、环境变量
+    ├── test_v23_batch.py     # 3 项：batch 纯函数边界（不依赖界面）
+    ├── test_v23_public_api.py # 3 项：app.py 只走公共 API、__all__ 完整性
+    ├── test_v23_service.py   # 6 项：编程式入口与报告
+    ├── test_v23_templates.py # 13 项：template_version 兼容与逐单元格一致
+    ├── test_v23_cli.py       # 30 项：四子命令、退出码、中文错误
+    ├── test_v23_api.py       # 25 项：HTTP API 三件事与错误路径
+    └── test_v23_benchmark.py # 6 项：benchmark 数据形态与基线表格
 ```
 
 `app.py` 只负责界面和收集用户选择；所有判断、清洗、导出都在 `cleaning/` 里，
@@ -438,12 +481,12 @@ CSV 没有单元格类型，用 Excel/WPS 打开时，`=`、`+`、`-`、`@`、�
 ## 确认你在跑哪个版本
 
 ```bash
-grep '__version__' cleaning/__init__.py        # 应显示 2.2.0
+grep '__version__' cleaning/__init__.py        # 应显示 2.3.0
 grep APP_VERSION app.py                        # 应显示 cleaning.__version__
-python -m pytest --collect-only -q | tail -1   # 应显示 214 tests collected
+python -m pytest --collect-only -q | tail -1   # 应显示 306 tests collected
 ```
 
-页面标题下方也会显示 `v2.2.0`。
+页面标题下方也会显示 `v2.3.0`。
 
 ## 安装
 
@@ -451,17 +494,89 @@ python -m pytest --collect-only -q | tail -1   # 应显示 214 tests collected
 
 ```bash
 cd table-cleaner
-python -m pip install -r requirements.txt        # 只是运行
+python -m pip install .                          # 安装为 Python 包，注册 table-cleaner / table-cleaner-api
+python -m pip install -r requirements.txt        # 只是运行网页版（不安装 console script）
 python -m pip install -r requirements-dev.txt    # 还要跑测试（含界面测试，streamlit 固定 1.66.0）
 ```
 
-## 运行（电脑本机）
+只装基础依赖时，库层也能独立完成读取、清洗和导出；Streamlit 只是其中一个前端。
+如果需要开发模式（改代码即时生效）：`python -m pip install -e .`。
+
+## 运行（电脑本机，网页版）
 
 ```bash
 python -m streamlit run app.py
 ```
 
 浏览器打开终端里显示的地址（一般是 `http://localhost:8501`）。停止服务按 `Ctrl+C`。
+
+## 命令行（CLI 预览版）
+
+> **预览版声明**：参数兼容承诺自 v3.0 起算；v2.3.0 期间允许调整参数，每次调整会记入 CHANGELOG。
+> CLI 与网页版共用 `CleanOptions` / `Limits`，同一输入、同一模板的输出逐单元格一致。
+
+```bash
+table-cleaner --help
+table-cleaner clean orders.csv --template shop.json -o orders_clean.csv --report report.md
+table-cleaner inspect orders.xlsx
+table-cleaner template shop.json --check
+table-cleaner batch ./订单目录 --template shop.json --out-dir ./清洗结果
+```
+
+| 子命令 | 用途 | 主要参数 |
+| --- | --- | --- |
+| `clean` | 按模板/开关清洗单个文件 | 输入文件、`--template`、`-o/--output`（必填）、`--report`、`--force` |
+| `inspect` | 只检查不清洗，输出中文问题报告 | 输入文件、`--header-row`、`--report` |
+| `template` | 查看/校验模板的字段、版本与规则摘要 | 模板文件、`--check`（只校验） |
+| `batch` | 按同一模板批量清洗目录或多个文件 | 输入目录/文件、`--template`、`--out-dir`（必填）、`--export-format` |
+
+- 不传模板时可以用开关：`--drop-duplicates`、`--dedupe-on`、`--drop-missing-in`、
+  `--rename 旧=新`、`--drop-cols`、`--order`、`--to-number`、`--to-date`、`--computed 新列=表达式`。
+- 输出文件默认**不覆盖**，已存在会报错并提示加 `--force`。
+- 退出码：`0` 成功；`1` 输入/数据错误（文件不存在、格式不支持、模板损坏或版本过高、超上限）；
+  `2` 参数用法错误（缺参数、输出路径不可写或已存在）；`3` 内部错误。
+- 所有错误只输出中文提示，不打印英文 Python 堆栈；完整参数见 `table-cleaner <子命令> --help`。
+
+## API 雏形（本地 HTTP，无鉴权）
+
+```bash
+table-cleaner-api --host 127.0.0.1 --port 8765
+# 或者：python -m api.http_api --port 8765
+```
+
+只做三件事，数据只存在进程内存：
+
+| 方法与路径 | 作用 |
+| --- | --- |
+| `POST /api/jobs` | 提交一次清洗：`filename`、`content_base64`、可选 `template`（模板对象）或 `rules`（规则对象），可选 `export_format` / `formula_mode` / `number_mode` |
+| `GET /api/jobs/{id}/result` | 取清洗后的结果文件（CSV 或 XLSX） |
+| `GET /api/jobs/{id}/report` | 取本次运行的中文报告、步骤与说明（JSON） |
+
+示例（Python 标准库提交，避免手写大段 Base64）：
+
+```python
+import base64, json, urllib.request
+
+payload = {
+    "filename": "orders.csv",
+    "content_base64": base64.b64encode(open("orders.csv", "rb").read()).decode(),
+    "template": {"template_version": 1, "规则": {"删除完全重复的行": True}},
+}
+request = urllib.request.Request(
+    "http://127.0.0.1:8765/api/jobs",
+    data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json"},
+)
+with urllib.request.urlopen(request) as response:
+    job = json.load(response)          # 201，含 job_id / rows_before / rows_after
+with urllib.request.urlopen(f"http://127.0.0.1:8765/api/jobs/{job['job_id']}/result") as response:
+    open("orders_clean.csv", "wb").write(response.read())
+```
+
+- **无账号、无登录、无权限、无任务队列、无结果持久化**；默认只监听 `127.0.0.1`，
+  不要直接暴露到公网，只适合本机或可信内网。
+- 任务最多保留 20 个（先进先出），服务重启即丢；请求体默认上限 32 MB。
+- 错误统一返回中文 JSON：`{"错误": "..."}`；接口不承诺稳定性，后续可能调整。
 
 ## 手机浏览器访问
 
@@ -486,16 +601,21 @@ Windows 防火墙首次弹窗是否点了「允许」（仅专用网络即可）
 ## 测试
 
 ```bash
-python -m pytest -q -rs                        # 全部 214 项（含界面，约 70 秒）
+python -m pytest -q -rs                        # 全部 306 项（含界面，约 35 秒）
 python -m pytest tests/test_app_logic.py -q    # 89 项，约 6 秒（v1.x 逻辑，原样保留）
 python -m pytest tests/test_v2_features.py -q  # 75 项，约 7 秒（v2 新功能逻辑）
+python -m pytest tests/test_v23_cli.py -q      # 30 项（CLI 四子命令 + 错误路径）
+python -m pytest tests/test_v23_api.py -q      # 25 项（HTTP API 三件事 + 错误路径）
+python -m pytest tests/test_v23_templates.py -q  # 13 项（template_version 兼容与逐单元格一致）
 python -m pytest tests/test_app_ui.py -q       # 18 项，约 35 秒（v1.x 界面，原样保留）
 python -m pytest tests/test_app_ui_v2.py -q    # 14 项，约 36 秒（v2 界面 + v2.0.1 回归）
 python -m pytest tests/test_regressions_v201.py -q  # 18 项，约 4 秒（v2.0.1 逻辑回归）
 ```
 
-数量口径：**214 = 89 + 75 + 18 项逻辑（182）+ 18 + 14 项界面（32）**，
-`pytest --collect-only -q` 最后一行会打印这个总数。
+数量口径：**306 = v2.2.0 既有 214 项 + v2.3.0 新增 92 项**。
+新增 92 项分布：CLI 30、API 25、limits 6、模板版本 13、编程式入口 6、
+benchmark 6、公共 API 边界 3、批量纯函数 3；`pytest --collect-only -q` 最后一行会打印总数。
+原有 214 项一个没删，测试语义冻结继续有效。
 
 v2 新增逻辑测试覆盖：包拆分后的对外接口、表头行（CSV/XLSX/越界/合并单元格空表头）、
 `current_limits` 与侧边栏覆盖、环境变量覆盖（含写错回退）、硬超时（Deadline/清洗/读取）、
@@ -536,6 +656,17 @@ v1.x 原有覆盖（89 项）全部保留：正常/空/损坏/超大文件、分
 - XLSX 编号模式切换 → 单元格类型从文本变成数字，`A002` 仍是文本；
 - 改了列变换 → 之前的下载失效。
 
+### v2.3.0 实测（2026-11-07）
+
+- `python -m pytest -q -rs` 连跑两遍：**306 passed / 0 skipped**（36.63 s、30.74 s），结果一致；
+  `--collect-only -q` 收集数 306。
+- `ruff format --check .` 与 `ruff check .` 全过；`mypy` 仍是 4 条 `transform.py` 存量错误（EX-001~EX-004），
+  本版未新增。
+- `coverage report --include='cleaning/*'`：**94%**（1595 statements / 99 missed），高于 v2.2.0 的 93% 基线；
+  本版只公布，CI 不按覆盖率拦截。
+- CLI 四子命令、CLI 坏文件/坏模板/缺参数、HTTP API 三件事、benchmark 小档复跑均有实跑记录，
+  明细见 `TEST_REPORT.md` 的 v2.3.0 节和 `CHANGELOG.md`。
+
 ### 交付前的实际验证（v2.0.1，三套环境）
 
 | 环境 | 怎么装的 | 版本 | `pytest -q -rs` 结果 |
@@ -562,7 +693,7 @@ v1.x 原有覆盖（89 项）全部保留：正常/空/损坏/超大文件、分
 | 跳过说「导入失败（streamlit）」 | **没装 streamlit** | `pip install -r requirements-dev.txt` 后重跑 |
 | 跳过说「AppTest 还不支持 file_uploader」 | 装了但版本老（实测 1.50 / 1.52 / 1.55 没有，1.66 有） | 把 streamlit 升到 1.66+（dev 依赖已固定） |
 
-- 两种情况都是**整个界面测试文件**在模块级跳过，`--collect-only` 仍显示 214 项
+- 两种情况都是**整个界面测试文件**在模块级跳过，`--collect-only` 仍显示 306 项
   （跳过发生在收集之后）。
 - 想看完整原因：`python -m pytest tests/test_app_ui_v2.py -q -rs`。
 - 跳过只影响「真实页面交互」的验证，逻辑测试照跑；应用本身在旧版 Streamlit 上仍能运行。
@@ -800,7 +931,7 @@ auth_basic_user_file /etc/nginx/.htpasswd;
 | 并发限制 | Nginx `limit_req_zone` / `limit_conn`，或 Streamlit 前置排队；容器 `--cpus=1` |
 | 访问控制 | Basic Auth（见上）、Cloudflare Access、或只在内网开放 |
 | 日志脱敏 | 不记录请求体；Nginx 默认 `$request` 不含上传内容，别加 `$request_body` |
-| 版本核对 | 部署后跑 `python -m pytest --collect-only -q \| tail -1`，应为 214 |
+| 版本核对 | 部署后跑 `python -m pytest --collect-only -q \| tail -1`，应为 306 |
 
 Streamlit 本身的 WebSocket 连接也会占内存，并发数要按实例内存除以单次处理峰值来估。
 模板只存在浏览器会话 + 用户下载的 JSON 里，服务器不落盘，不需要额外备份策略。
@@ -841,6 +972,10 @@ Streamlit 本身的 WebSocket 连接也会占内存，并发数要按实例内�
 | 带时区的日期 | 同一时区的日期会保留「当地时间的日期」，时区标记不保留 | Excel 单元格不支持时区 | 需要保留时区请用文本；混时区的整列会保留原文并提示 |
 | 计算列算出的大整数 | 例如 `2**100`，页面预览和 CSV 都对，导出 XLSX 后会被 Excel 按 15 位有效数字显示（值被四舍五入） | XLSX 的数字单元格本身就是双精度 | 需要完整数字就导出 CSV，或把结果当文本 |
 | 极老日期（如 1677 年） | 不同 pandas 版本解析结果可能不同（3.0 认成日期、2.2 保留文本） | pandas 版本差异 | 一般业务数据不会遇到；遇到就手工统一格式 |
+| CLI 参数 | v2.3.0 是预览版，参数兼容承诺自 v3.0 起算 | 先证明库能脱离网页运行，避免过早冻结接口 | 脚本里调用前看 `table-cleaner <子命令> --help`；调整会记 CHANGELOG |
+| HTTP API | **没有鉴权**，默认只监听 127.0.0.1，任务只存内存、最多 20 个 | 本版只验证库层可被程序调用，不做账号/权限/队列/持久化 | 只在本机或可信内网用；不要暴露公网，重启会丢任务 |
+| 在线 Demo | 本版**未提供**在线 Demo | 没有可用的托管环境，且不在本版交付范围 | 用本地 `python -m streamlit run app.py` 或 CLI/API 试用 |
+| benchmark 基线 | 只有单机一次首版基线，未做跨机/多版本对比，未设 10% 回退门禁 | 本版只要求测出基线，不设提升目标 | 看 `benchmarks/BASELINE.md` 的环境与协议；换机重跑只比相对值 |
 | 手机浏览器手工验收 | 本轮环境无法在手机里点一遍（读屏/截图不可用、端口不可达） | 环境限制，见上一节 | 交付前人工走一遍「真机验收清单」9 步 |
 
 ## 目前不包含
