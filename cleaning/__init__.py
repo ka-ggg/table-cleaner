@@ -30,7 +30,7 @@
 
 from __future__ import annotations
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 from .batch import BatchItem, BatchJob, BatchReport, run_batch
 from .errors import Deadline, TableError

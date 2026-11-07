@@ -191,7 +191,7 @@ def test_merged_header_only_is_not_reported_as_data_merge():
 
 
 def test_version_is_bumped_after_fixes():
-    assert cleaning.__version__ == "2.3.0"
+    assert cleaning.__version__ == "2.4.0"
 
 
 # ---------------------------------------------------------------- 第二轮复审补充
