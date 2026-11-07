@@ -23,6 +23,16 @@
 
 三者都是宽松许可证，允许商业使用、修改、再分发；再分发时要保留版权与许可证声明。
 
+### 2.1 可选引擎依赖（`pip install .[polars]`，默认不安装）
+
+| 包 | 版本约束 | 许可证 | 说明 |
+| --- | --- | --- | --- |
+| `polars` | `>=1,<2` | MIT | v2.4.0 的 Polars 引擎（内部预览，默认仍是 pandas）；运行时 wheel 依赖 `polars-runtime-32`（MIT） |
+| `jsonschema` | `>=4,<5` | MIT | Pipeline DSL v1 校验（v2.4.0 仅开发/测试依赖，见 `requirements-dev.txt`） |
+
+两者都是 MIT，允许商业使用与再分发；再分发时保留版权与许可证声明。默认安装
+（只装 `requirements.txt`）不包含 Polars，既有 pandas 行为不受影响。
+
 ## 3. 运行时的传递依赖（实测 36 个包，含上面 3 个）
 
 | 包 | 实测版本 | 许可证（元数据） |
@@ -79,6 +89,7 @@
 | `pytest` | MIT | 测试框架 |
 | `streamlit==1.66.0` | Apache-2.0 | 固定版本以支持 `AppTest` 的 file_uploader |
 | `jsonschema` | MIT | Pipeline DSL v1 的 JSON Schema 校验（v2.4.0 仅开发依赖；v3.0 公开 DSL 时提升为运行时依赖） |
+| `polars` | MIT | 双引擎对齐测试（v2.4.0 W2/W3）；开发/测试环境必须安装，避免对齐测试被静默跳过 |
 
 ## 5. 分发时要做的事
 

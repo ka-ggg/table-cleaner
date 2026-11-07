@@ -332,6 +332,22 @@ def safe_eval(expr: str, df: pd.DataFrame) -> pd.Series:
     return pd.Series(value, index=df.index)
 
 
+def _finalize_computed_column(df: pd.DataFrame, name: str, result: pd.Series, notes: list[str]) -> pd.DataFrame:
+    """把算出来的结果整理成一列：无穷大留空并提示，整数结果收回整数显示。
+
+    抽成共享函数是为了让 pandas 与 Polars 引擎走同一套收尾逻辑：两边都只负责
+    「算出数值」，留空文案、整数化与列顺序必须逐字一致，不能各写一份。
+    """
+    infinities = int((result == float("inf")).sum() + (result == float("-inf")).sum())
+    if infinities:
+        result = result.replace([float("inf"), float("-inf")], pd.NA)
+        notes.append(f"计算列「{name}」有 {infinities} 个单元格的结果是无穷大（除以 0 或数字太大），已留空。")
+    result = _tidy_numbers(result)  # 4.0 → 4：浮点算完把整数值显示回整数
+    out = df.copy()
+    out[name] = result
+    return out
+
+
 def add_computed_column(df: pd.DataFrame, name: str, expr: str, notes: list[str]) -> pd.DataFrame:
     """加一列计算结果；算不出来就记一条说明并跳过这一列，不影响其他列。"""
     if not name:
@@ -348,14 +364,7 @@ def add_computed_column(df: pd.DataFrame, name: str, expr: str, notes: list[str]
     except Exception as exc:  # 除以 0、文本参与乘法等
         notes.append(f"计算列「{name}」没有生成：表达式「{expr}」算不出来（{exc}）；请确认参与计算的列都是数字。")
         return df
-    infinities = int((result == float("inf")).sum() + (result == float("-inf")).sum())
-    if infinities:
-        result = result.replace([float("inf"), float("-inf")], pd.NA)
-        notes.append(f"计算列「{name}」有 {infinities} 个单元格的结果是无穷大（除以 0 或数字太大），已留空。")
-    result = _tidy_numbers(result)  # 4.0 → 4：浮点算完把整数值显示回整数
-    out = df.copy()
-    out[name] = result
-    return out
+    return _finalize_computed_column(df, name, result, notes)
 
 
 # ---------------------------------------------------------------- 一起应用

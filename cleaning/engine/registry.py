@@ -10,9 +10,9 @@
 - ``partial_fallback``：常见路径对齐，已登记的边界输入整条流水线回落 pandas；
 - ``full_fallback``：整项能力回落 pandas，必须写清原因与到期版本。
 
-本 PR 只落地合同（W1 + W4），尚未实现 Polars；``polars_implemented`` 为 False
-表示状态仍是目标合同，W2 实现后置 True 并填 ``polars_impl``。禁止把未实现的能力
-标成已完成——这会让对齐测试和发布门禁失去意义。
+W1 只落地合同；W2（v2.4.0 实施 PR 3）已为 17 项能力填入 Polars 实现路径并置
+``polars_implemented=True``。实现路径由 ``tests/test_v240_engine_alignment.py``
+逐项调用比较；禁止把未实现的能力标成已完成，否则对齐与发布门禁会失去意义。
 """
 
 from __future__ import annotations
@@ -93,6 +93,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         case_ids=("R1-null-vs-empty-text", "R1-keep-first-order", "R1-multi-column-all-null"),
         stage=10,
         node_type="row.drop_duplicates",
+        polars_impl="cleaning.engine.polars_engine.drop_duplicate_rows",
+        polars_implemented=True,
     ),
     Capability(
         id="R2",
@@ -106,6 +108,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         case_ids=("R2-subset-first", "R2-null-key", "R2-empty-text-key"),
         stage=20,
         node_type="row.dedupe_by",
+        polars_impl="cleaning.engine.polars_engine.drop_duplicate_rows",
+        polars_implemented=True,
     ),
     Capability(
         id="R3",
@@ -119,6 +123,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         case_ids=("R3-single-column", "R3-all-columns", "R3-chunk-equals-whole"),
         stage=30,
         node_type="row.drop_missing",
+        polars_impl="cleaning.engine.polars_engine.drop_missing_rows",
+        polars_implemented=True,
     ),
     Capability(
         id="R4",
@@ -132,6 +138,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         case_ids=("R4-existing", "R4-missing-column", "R4-drop-multiple"),
         stage=40,
         node_type="column.drop",
+        polars_impl="cleaning.engine.polars_engine.drop_columns",
+        polars_implemented=True,
     ),
     Capability(
         id="R5",
@@ -140,7 +148,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         summary="numeric_series + Decimal 精度守卫 + _tidy_numbers；失败位置保留原文并计数。",
         pandas_impl="cleaning.transform.convert_to_number",
         polars_status=STATUS_PARTIAL_FALLBACK,
-        polars_reason="常见数字/千分位/货币/百分比路径对齐；长编号、溢出、混合列等边界整节点回落 pandas。",
+        polars_reason="常见数字/千分位/科学计数路径对齐；货币符号、百分号、长编号、溢出、混合列等边界整节点回落 pandas。",
         risk=">15 位长编号、整数溢出、混合列、显示类型",
         case_ids=(
             "R5-thousands",
@@ -151,6 +159,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
         stage=50,
         node_type="column.to_number",
+        polars_impl="cleaning.engine.polars_engine.convert_to_number",
+        polars_implemented=True,
     ),
     Capability(
         id="R6",
@@ -159,7 +169,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         summary="pd.to_datetime(format='mixed') + 时区处理；整日只留日期，失败保留原文。",
         pandas_impl="cleaning.transform.convert_to_date",
         polars_status=STATUS_PARTIAL_FALLBACK,
-        polars_reason="ISO、/、中文年月日等明确格式走 Polars 快路径；混合格式、混时区整节点回落 pandas，不猜格式。",
+        polars_reason="ISO、/ 等明确格式走 Polars 解析；中文年月日按当前 pandas「保留原文并计数」对齐；混合格式、混时区整节点回落 pandas，不猜格式。",
         risk="格式猜测、时区、日期 vs 日期时间",
         case_ids=(
             "R6-iso",
@@ -170,6 +180,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
         stage=60,
         node_type="column.to_date",
+        polars_impl="cleaning.engine.polars_engine.convert_to_date",
+        polars_implemented=True,
     ),
     Capability(
         id="R7",
@@ -183,6 +195,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         case_ids=("R7-basic", "R7-missing-source", "R7-name-conflict"),
         stage=70,
         node_type="column.rename",
+        polars_impl="cleaning.engine.polars_engine.rename_columns",
+        polars_implemented=True,
     ),
     Capability(
         id="R8",
@@ -191,7 +205,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         summary="AST 白名单 + pandas Series 运算；round/abs 守卫，无穷大留空并提示。",
         pandas_impl="cleaning.transform.add_computed_column",
         polars_status=STATUS_PARTIAL_FALLBACK,
-        polars_reason="四则、一元、round/abs、幂守卫核心路径对齐；取整、负数整除/取模、除零、溢出边界回落 pandas。",
+        polars_reason="四则（除零→inf 留空）、一元、round/abs、幂守卫核心路径对齐；//、%、** 与非数字列等边界整节点回落 pandas。",
         risk="取整、除零、溢出、// 与 % 的负数符号",
         case_ids=(
             "R8-precedence",
@@ -202,6 +216,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
         stage=80,
         node_type="column.compute",
+        polars_impl="cleaning.engine.polars_engine.add_computed_column",
+        polars_implemented=True,
     ),
     Capability(
         id="R9",
@@ -215,6 +231,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         case_ids=("R9-order-front", "R9-missing-column", "R9-rest-preserved"),
         stage=90,
         node_type="column.order",
+        polars_impl="cleaning.engine.polars_engine.order_columns",
+        polars_implemented=True,
     ),
     Capability(
         id="I1",
@@ -226,6 +244,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="null 计数 + 空文本计数，与 missing_mask 同一判定。",
         risk="空文本、数字 0、null 表示",
         case_ids=("I1-null-and-empty-text", "I1-zero-not-missing"),
+        polars_impl="cleaning.engine.polars_engine.find_missing",
+        polars_implemented=True,
     ),
     Capability(
         id="I2",
@@ -234,9 +254,11 @@ CAPABILITIES: tuple[Capability, ...] = (
         summary="duplicated().sum()：所有列值完全相同的行数，不删数据。",
         pandas_impl="cleaning.rules.summarize",
         polars_status=STATUS_ALIGNED,
-        polars_reason="is_duplicated().sum() 与 duplicated().sum() 对 null 相等性一致。",
+        polars_reason="height - unique(maintain_order=True).height 与 duplicated().sum() 一致；null 相等性也一致。",
         risk="null 相等性、混合 dtype",
         case_ids=("I2-duplicate-count", "I2-null-rows"),
+        polars_impl="cleaning.engine.polars_engine.summarize",
+        polars_implemented=True,
     ),
     Capability(
         id="I3",
@@ -248,6 +270,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="按逻辑类型识别文本列，首尾空格与公式判定精确优先，可接受逐值回调。",
         risk="Unicode 空白、BOM/零宽字符、逐值性能",
         case_ids=("I3-leading-space", "I3-formula-prefixes", "I3-bom-zero-width"),
+        polars_impl="cleaning.engine.polars_engine.find_suspicious",
+        polars_implemented=True,
     ),
     Capability(
         id="X1",
@@ -259,6 +283,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="按同一运算符与负数语义映射到 pl.Expr，逐项差分。",
         risk="负数取模/整除、溢出",
         case_ids=("X1-four-ops", "X1-negative-floor-mod", "X1-overflow"),
+        polars_impl="cleaning.engine.polars_engine.evaluate_expression",
+        polars_implemented=True,
     ),
     Capability(
         id="X2",
@@ -270,6 +296,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="一元正负直接对应 Polars 表达式，无额外 dtype 语义。",
         risk="dtype 变化",
         case_ids=("X2-unary-plus", "X2-unary-minus"),
+        polars_impl="cleaning.engine.polars_engine.evaluate_expression",
+        polars_implemented=True,
     ),
     Capability(
         id="X3",
@@ -281,6 +309,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="按同一保留位数上限与半偶舍入对齐；若 W3 差分发现不一致则登记 partial_fallback。",
         risk="半偶舍入 vs NumPy、位数上限",
         case_ids=("X3-round-digits", "X3-round-negative", "X3-round-limit"),
+        polars_impl="cleaning.engine.polars_engine.evaluate_round",
+        polars_implemented=True,
     ),
     Capability(
         id="X4",
@@ -292,6 +322,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="abs() 对负数与 null 的语义一致。",
         risk="null 传播",
         case_ids=("X4-abs-negative", "X4-abs-null"),
+        polars_impl="cleaning.engine.polars_engine.evaluate_abs",
+        polars_implemented=True,
     ),
     Capability(
         id="X5",
@@ -303,6 +335,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         polars_reason="编译期常量位数检查 + 运行期 inf 处理，共用同一上限。",
         risk="常量折叠、运行期溢出",
         case_ids=("X5-constant-explosion", "X5-runtime-inf"),
+        polars_impl="cleaning.engine.polars_engine.evaluate_pow_guard",
+        polars_implemented=True,
     ),
 )
 
