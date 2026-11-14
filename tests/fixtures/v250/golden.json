@@ -1,0 +1,215 @@
+{
+  "app_e2e": {
+    "columns": [
+      "订单号",
+      "客户",
+      "金额",
+      "单价",
+      "折扣",
+      "数量",
+      "下单日期",
+      "状态",
+      "备注",
+      "长编号",
+      "电话",
+      "渠道"
+    ],
+    "csv_sha256": "705d779abe04981862fc92775e8a923133c78570b5cefc551a641c27fe6da3f0",
+    "fixture": "small_mixed.csv",
+    "formula_mode": "quote",
+    "rows": 5,
+    "rules": "删除完全重复的行 + 按订单号去重 + 删除备注空值行"
+  },
+  "cases": {
+    "default": {
+      "columns_after": [
+        "订单号",
+        "客户",
+        "金额",
+        "单价",
+        "折扣",
+        "数量",
+        "下单日期",
+        "状态",
+        "备注",
+        "长编号",
+        "电话",
+        "渠道"
+      ],
+      "csv_sha256": {
+        "off": "08f135077fb9483c449161deb3019fd8fb6f782a9cb7ce7e32711596d62f4639",
+        "quote": "ab60be9529427b706d1623834f8b1dfa80f1d2aa9119eeac79045f6c3563c384",
+        "zwsp": "fbc31b708975d98bc4ffd5e71d6daa8b081c1baf1a78d9c30f5a0066784be81b"
+      },
+      "report": {
+        "notes": [],
+        "removed": [],
+        "steps": {}
+      },
+      "rows_after": 9,
+      "xlsx_entries_sha256": {
+        "number": {
+          "[Content_Types].xml": "2fd871365a885c9d2ef12c9df3bcb523737614c8ba8581c36cd462abb5e74635",
+          "_rels/.rels": "ec869ae44fc833c25e58afa6ae766147aa72a99147522f6070e511475222827d",
+          "docProps/app.xml": "209fca6b00afe72a5029754b94be5953d8f16d96f67130325566b9366ad4ccc5",
+          "xl/_rels/workbook.xml.rels": "8b55e81b6390446109e3c54f68f9ed0922fea7fc7c805eb84eb23523bb638a0e",
+          "xl/styles.xml": "c7b12b9e3bb2ee4e41fde2c6b76e18c100aa411d8d8cdcba5ca7b75735cb3717",
+          "xl/theme/theme1.xml": "d15e8ebf78ef7b9720839d7ae8fdc81a7df5bc24706d8e137df61a5683c358d9",
+          "xl/workbook.xml": "bf01fc6be7920694df91103069c7801ba60335355f432c0be5e2406aa8d64a3e",
+          "xl/worksheets/sheet1.xml": "e09a8ef822144dae3173cba2f6987977bc4d0fcaf3623aa95052dc7dda904ce4"
+        },
+        "text": {
+          "[Content_Types].xml": "2fd871365a885c9d2ef12c9df3bcb523737614c8ba8581c36cd462abb5e74635",
+          "_rels/.rels": "ec869ae44fc833c25e58afa6ae766147aa72a99147522f6070e511475222827d",
+          "docProps/app.xml": "209fca6b00afe72a5029754b94be5953d8f16d96f67130325566b9366ad4ccc5",
+          "xl/_rels/workbook.xml.rels": "8b55e81b6390446109e3c54f68f9ed0922fea7fc7c805eb84eb23523bb638a0e",
+          "xl/styles.xml": "c7b12b9e3bb2ee4e41fde2c6b76e18c100aa411d8d8cdcba5ca7b75735cb3717",
+          "xl/theme/theme1.xml": "d15e8ebf78ef7b9720839d7ae8fdc81a7df5bc24706d8e137df61a5683c358d9",
+          "xl/workbook.xml": "bf01fc6be7920694df91103069c7801ba60335355f432c0be5e2406aa8d64a3e",
+          "xl/worksheets/sheet1.xml": "c6d7030bb9b3b1b7fe0426fcf86fcc797485fc2e0bab74b7655d54a14686bded"
+        }
+      }
+    },
+    "rules": {
+      "columns_after": [
+        "订单号",
+        "客户",
+        "总金额",
+        "单价",
+        "折扣",
+        "数量",
+        "下单日期",
+        "状态",
+        "备注",
+        "长编号",
+        "电话",
+        "含税金额"
+      ],
+      "csv_sha256": {
+        "off": "ebc89636d181d6761757cc6fb922ec5f03986ed805fc68d27d74052cef4c4d10",
+        "quote": "4bad38ea5002bc4eac58d7cfdb69ca7937b7fa6167c76c1b94c03ba792a1f893",
+        "zwsp": "48105f72c8f90398d9829ae49fcd7575d7d32cd7661ccc54a4bd2b55ccefd34f"
+      },
+      "report": {
+        "notes": [
+          "「金额」转数字时有 1 个单元格没转成功，已保留原文（例如「¥99.00」）；需要的话请手工修正这些格子。",
+          "「下单日期」转日期时有 5 个单元格没转成功，已保留原文（例如「2026-01-02」、「2026年01月04日」）；常见写法如 2024-05-01、2024/5/1。"
+        ],
+        "removed": [
+          {
+            "下单日期": "2026-01-02",
+            "删除原因": "删除完全重复的行",
+            "单价": "10.5",
+            "备注": "送货前电话",
+            "客户": "晨光小吃店",
+            "折扣": "0.9",
+            "数量": "2",
+            "渠道": "天猫",
+            "状态": "已完成",
+            "电话": "13800001111",
+            "订单号": "A001",
+            "金额": "128.00",
+            "长编号": "123456789012345678"
+          },
+          {
+            "下单日期": "2026/01/03",
+            "删除原因": "删除指定列中有空值的行",
+            "单价": "20",
+            "备注": "",
+            "客户": "星语文具",
+            "折扣": "九折",
+            "数量": "1",
+            "渠道": "京东",
+            "状态": "待付款",
+            "电话": "13800002222",
+            "订单号": "A002",
+            "金额": "0",
+            "长编号": "123456789012345679"
+          },
+          {
+            "下单日期": "2026-01-06T10:00:00Z",
+            "删除原因": "删除指定列中有空值的行",
+            "单价": "3.3",
+            "备注": "",
+            "客户": "麦田烘焙",
+            "折扣": "0.9",
+            "数量": "2",
+            "渠道": "京东",
+            "状态": "已退款",
+            "电话": "13800005555",
+            "订单号": "A006",
+            "金额": "66.60",
+            "长编号": "123456789012345682"
+          },
+          {
+            "下单日期": "2026/02/30",
+            "删除原因": "删除指定列中有空值的行",
+            "单价": "4.4",
+            "备注": "",
+            "客户": "云朵咖啡",
+            "折扣": "",
+            "数量": "1",
+            "渠道": "抖音",
+            "状态": "已完成",
+            "电话": "13800006666",
+            "订单号": "A007",
+            "金额": "88",
+            "长编号": "123456789012345683"
+          }
+        ],
+        "steps": {
+          "删除完全重复的行": 1,
+          "删除指定列中有空值的行": 3,
+          "按指定列去重": 0
+        }
+      },
+      "rows_after": 5,
+      "xlsx_entries_sha256": {
+        "number": {
+          "[Content_Types].xml": "2fd871365a885c9d2ef12c9df3bcb523737614c8ba8581c36cd462abb5e74635",
+          "_rels/.rels": "ec869ae44fc833c25e58afa6ae766147aa72a99147522f6070e511475222827d",
+          "docProps/app.xml": "209fca6b00afe72a5029754b94be5953d8f16d96f67130325566b9366ad4ccc5",
+          "xl/_rels/workbook.xml.rels": "8b55e81b6390446109e3c54f68f9ed0922fea7fc7c805eb84eb23523bb638a0e",
+          "xl/styles.xml": "c7b12b9e3bb2ee4e41fde2c6b76e18c100aa411d8d8cdcba5ca7b75735cb3717",
+          "xl/theme/theme1.xml": "d15e8ebf78ef7b9720839d7ae8fdc81a7df5bc24706d8e137df61a5683c358d9",
+          "xl/workbook.xml": "bf01fc6be7920694df91103069c7801ba60335355f432c0be5e2406aa8d64a3e",
+          "xl/worksheets/sheet1.xml": "704002e68e068ab83c2ecc6430be1fb2d6cab8f9db0b89069c655c79f09f006c"
+        },
+        "text": {
+          "[Content_Types].xml": "2fd871365a885c9d2ef12c9df3bcb523737614c8ba8581c36cd462abb5e74635",
+          "_rels/.rels": "ec869ae44fc833c25e58afa6ae766147aa72a99147522f6070e511475222827d",
+          "docProps/app.xml": "209fca6b00afe72a5029754b94be5953d8f16d96f67130325566b9366ad4ccc5",
+          "xl/_rels/workbook.xml.rels": "8b55e81b6390446109e3c54f68f9ed0922fea7fc7c805eb84eb23523bb638a0e",
+          "xl/styles.xml": "c7b12b9e3bb2ee4e41fde2c6b76e18c100aa411d8d8cdcba5ca7b75735cb3717",
+          "xl/theme/theme1.xml": "d15e8ebf78ef7b9720839d7ae8fdc81a7df5bc24706d8e137df61a5683c358d9",
+          "xl/workbook.xml": "bf01fc6be7920694df91103069c7801ba60335355f432c0be5e2406aa8d64a3e",
+          "xl/worksheets/sheet1.xml": "8d32e57fbf3010da4ab65b3c15345d92f4e233f72ffbb0799340b74c5822d8f9"
+        }
+      }
+    }
+  },
+  "fixtures": {
+    "multi_sheet.xlsx": {
+      "sha256_content": "6eee2a77ee871036d672141f8ad4d8bc8458088de6b4bd4f8a1bb3b984bc1ea4",
+      "sheets": [
+        "订单",
+        "客户"
+      ]
+    },
+    "small_mixed.csv": {
+      "columns": 12,
+      "rows": 9,
+      "sha256": "08f135077fb9483c449161deb3019fd8fb6f782a9cb7ce7e32711596d62f4639"
+    }
+  },
+  "meta": {
+    "command": "python benchmarks/capture_golden.py --out tests/fixtures/v250/golden.json",
+    "generated_at": "2026-11-14 20:27:35",
+    "generated_from": "v2.4.0 基线 worktree",
+    "notes": "CSV 字节级；XLSX 忽略 docProps/core.xml 与 ZIP 时间戳；报告字段级。",
+    "openpyxl": "3.1.5",
+    "pandas": "3.1.1",
+    "python": "3.12.3",
+    "source_commit": "83a66eecf5bc63bf2800f9acba72ade09cddb3ee"
+  }
+}
