@@ -70,7 +70,11 @@ mypy 4 条均为 `cleaning/transform.py` 存量（EX-001~EX-004），与基线�
 fixture：50,000 行 × 12 列，种子 `20261114`，5.67 MB，sha256 `bdd65d6a11c34d89…`；生成参数与 harness 都在 `benchmarks/app_interaction.py`，大文件不提交。
 
 ```bash
-# v2.4.0 基线（83a66ee 独立 worktree /tmp/tc-v240-baseline）
+# 基线侧先建独立 worktree，并把本次新增的 harness 拷进去（83a66ee 还没有它）
+git worktree add --detach /tmp/tc-v240-baseline 83a66ee
+cp benchmarks/app_interaction.py /tmp/tc-v240-baseline/benchmarks/
+
+# v2.4.0 基线（83a66ee 独立 worktree）
 cd /tmp/tc-v240-baseline && python benchmarks/app_interaction.py --json-out /tmp/bench-base.json
 
 # v2.5.0 W1
@@ -103,7 +107,7 @@ python benchmarks/app_interaction.py --json-out /tmp/bench-new.json
 
 ### W1.7 结果一致性金标
 
-金标在 `83a66ee` 的独立 worktree 用 `python benchmarks/capture_golden.py --out tests/fixtures/v250/golden.json --fixtures-dir tests/fixtures/v250` 现场生成，提交为 `tests/fixtures/v250/golden.json`；v2.5 测试只读金标。
+金标在 `83a66ee` 的独立 worktree（先把 `benchmarks/capture_golden.py` 拷进去）用 `python benchmarks/capture_golden.py --out tests/fixtures/v250/golden.json --fixtures-dir tests/fixtures/v250` 现场生成，提交为 `tests/fixtures/v250/golden.json`；v2.5 测试只读金标。
 
 - CSV：`small_mixed.csv` ×（默认/规则）× 3 种防护模式，`sha256` 与基线**逐字节一致**；
 - XLSX：`text`/`number` 两种编号模式，解包后除 `docProps/core.xml`（写入时间）外逐条目字节一致；
