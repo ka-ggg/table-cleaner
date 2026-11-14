@@ -13,6 +13,8 @@ import openpyxl
 import pandas as pd
 import pytest
 
+from ui_selectors import _button, _by_label, _checkbox, _dataframe
+
 APP_PATH = Path(__file__).resolve().parent.parent / "app.py"
 
 try:
@@ -59,10 +61,6 @@ def two_sheet_xlsx() -> bytes:
     return buffer.getvalue()
 
 
-def _by_label(elements, prefix: str):
-    return next(element for element in elements if element.label.startswith(prefix))
-
-
 # ---------------------------------------------------------------- 表头行
 
 
@@ -76,7 +74,7 @@ def test_header_row_can_be_changed_in_ui(app):
     _by_label(at.number_input, "表头在第几行").set_value(2).run()
     assert not list(at.exception)
     assert {m.label: m.value for m in at.metric} == {"行数": "3", "列数": "2"}
-    assert at.dataframe[0].value["订单号"].tolist() == ["A1", "A1", "A2"]
+    assert _dataframe(at, "订单号").value["订单号"].tolist() == ["A1", "A1", "A2"]
 
 
 # ---------------------------------------------------------------- 进阶列操作
@@ -91,7 +89,7 @@ def test_advanced_column_ops_reach_the_download(app):
     _by_label(at.text_area, "计算列").input("总额=单价*件数").run()
     assert not list(at.exception)
 
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert not list(at.exception)
     exports = at.session_state["exports"]
     back = pd.read_csv(BytesIO(exports["csv"]), dtype=str, keep_default_na=False)
@@ -110,7 +108,7 @@ def test_advanced_bad_expression_shows_chinese_error_but_page_works(app):
     assert not list(at.exception)
     errors = [error.value for error in at.error]
     assert errors and "第 1 行" in errors[0]
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert not list(at.exception)
     assert "csv" in at.session_state["exports"]
 
@@ -199,7 +197,7 @@ def test_template_save_and_apply_restores_widgets(app):
     """保存当前规则为模板 → 改乱控件 → 点「套用」后全部恢复。"""
     at = app()
     at.get("file_uploader")[0].upload("商品.csv", OPS_CSV, "text/csv").run()
-    at.checkbox[0].check().run()  # 删除完全重复的行
+    _checkbox(at, "删除完全重复的行").check().run()
     _by_label(at.text_area, "列重命名").input("数量=件数").run()
     _by_label(at.text_area, "计算列").input("总额=单价*数量").run()
     _by_label(at.text_input, "模板名称").input("商品模板").run()
@@ -212,14 +210,14 @@ def test_template_save_and_apply_restores_widgets(app):
     assert saved["计算列"] == [["总额", "单价*数量"]]
 
     # 改乱
-    at.checkbox[0].uncheck().run()
+    _checkbox(at, "删除完全重复的行").uncheck().run()
     _by_label(at.text_area, "列重命名").input("").run()
     _by_label(at.text_area, "计算列").input("").run()
-    assert at.checkbox[0].value is False
+    assert _checkbox(at, "删除完全重复的行").value is False
 
     _by_label(at.button, "套用").click().run()
     assert not list(at.exception)
-    assert at.checkbox[0].value is True
+    assert _checkbox(at, "删除完全重复的行").value is True
     assert _by_label(at.text_area, "列重命名").value == "数量=件数"
     assert _by_label(at.text_area, "计算列").value == "总额=单价*数量"
 
@@ -235,7 +233,7 @@ def test_template_file_upload_applies_rules(app):
     template_uploader.set_value(("模板.json", cleaning.dumps(template), "application/json")).run()
     assert not list(at.exception)
     assert _by_label(at.number_input, "表头在第几行").value == 2
-    assert at.checkbox[0].value is True
+    assert _checkbox(at, "删除完全重复的行").value is True
     assert {m.label: m.value for m in at.metric} == {"行数": "3", "列数": "2"}
 
 
@@ -246,16 +244,16 @@ def test_formula_mode_radio_controls_csv_export(app):
     """三种公式防护模式在真实页面上切换后，导出的 CSV 内容跟着变，旧文件自动失效。"""
     at = app()
     at.get("file_uploader")[0].upload("订单.csv", "备注\n=1+1\n正常\n".encode("utf-8-sig"), "text/csv").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert "'=1+1" in at.session_state["exports"]["csv"].decode("utf-8-sig")
 
     _by_label(at.radio, "导出 CSV 时的公式防护").set_value("off").run()
     assert "exports" not in at.session_state  # 换模式后旧导出必须失效
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert "'=1+1" not in at.session_state["exports"]["csv"].decode("utf-8-sig")
 
     _by_label(at.radio, "导出 CSV 时的公式防护").set_value("zwsp").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert "\u200b=1+1" in at.session_state["exports"]["csv"].decode("utf-8-sig")
 
 
@@ -263,12 +261,12 @@ def test_xlsx_number_mode_radio_changes_cell_types(app):
     """编号 00123：默认强制文本；切到「尝试转数字」后 XLSX 里是真数字。"""
     at = app()
     at.get("file_uploader")[0].upload("编号.csv", "编号\n00123\nA002\n".encode("utf-8-sig"), "text/csv").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     sheet = openpyxl.load_workbook(BytesIO(at.session_state["exports"]["xlsx"])).active
     assert sheet["A2"].value == "00123"
 
     _by_label(at.radio, "导出 XLSX 时编号类字段怎么处理").set_value("number").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     sheet = openpyxl.load_workbook(BytesIO(at.session_state["exports"]["xlsx"])).active
     assert sheet["A2"].value == 123
     assert sheet["A3"].value == "A002"
@@ -278,7 +276,7 @@ def test_advanced_ops_change_invalidates_downloads(app):
     """列变换改了以后，之前生成的下载必须失效（和清洗选项同一套机制）。"""
     at = app()
     at.get("file_uploader")[0].upload("商品.csv", OPS_CSV, "text/csv").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert "exports" in at.session_state
 
     _by_label(at.text_area, "列重命名").input("数量=件数").run()
@@ -301,7 +299,7 @@ def test_mixed_timezone_dates_show_warning_instead_of_traceback(app):
 
     assert not list(at.exception)
     assert any("没转成功" in str(warning.value) for warning in at.warning)
-    at.button[0].click().run()  # 「生成下载文件」照常可用
+    _button(at, "生成下载文件").click().run()
     assert "csv" in at.session_state["exports"]
 
 
@@ -314,4 +312,5 @@ def test_exploding_expression_does_not_freeze_the_page(app):
 
     assert not list(at.exception)
     assert any("结果太大" in str(warning.value) for warning in at.warning)
-    assert "爆炸" not in at.dataframe[0].value.columns
+    # 文件预览和清洗后预览的列名可能相同，无法只靠列名唯一命中；这里检查页面上所有表格。
+    assert all("爆炸" not in frame.value.columns for frame in at.dataframe)

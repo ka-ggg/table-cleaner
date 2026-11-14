@@ -11,6 +11,8 @@ import pandas as pd
 import pytest
 from cleaning import to_xlsx_bytes
 
+from ui_selectors import _button, _checkbox, _dataframe, _multiselect, _selectbox
+
 APP_PATH = Path(__file__).resolve().parent.parent / "app.py"
 
 # 界面测试要两样东西，缺了哪个都要在输出里说清楚，别让「1 skipped」看不出原因：
@@ -65,7 +67,7 @@ def test_upload_shows_stats_and_preview(app):
     assert not list(at.exception)
 
     assert {m.label: m.value for m in at.metric} == {"行数": "4", "列数": "4"}
-    preview = at.dataframe[0].value
+    preview = _dataframe(at, "订单号", "客户", "金额", "备注").value
     assert len(preview) == 4
     assert preview["订单号"].tolist() == ["A001", "A002", "A002", "A003"]
 
@@ -94,12 +96,12 @@ def test_phone_flow_semicolon_csv_end_to_end(app):
     assert not list(at.exception)
     assert {m.label: m.value for m in at.metric} == {"行数": "4", "列数": "4"}
 
-    at.checkbox[0].check().run()  # 删除完全重复的行
-    at.checkbox[1].check().run()  # 删除指定列中有空值的行
-    at.multiselect[0].select("备注").run()
+    _checkbox(at, "删除完全重复的行").check().run()
+    _checkbox(at, "删除指定列中有空值的行").check().run()
+    _multiselect(at, "选择要检查空值的列").select("备注").run()
     assert not list(at.exception)
 
-    at.button[0].click().run()  # 生成下载文件
+    _button(at, "生成下载文件").click().run()
     exports = at.session_state["exports"]
     back = pd.read_csv(BytesIO(exports["csv"]), dtype=str, keep_default_na=False)
 
@@ -112,11 +114,11 @@ def test_changing_options_invalidates_downloads(app):
     """改了清洗选项，之前生成的下载必须失效，不能让人拿到旧文件。"""
     at = app()
     at.get("file_uploader")[0].upload("订单.csv", SAMPLE_CSV, "text/csv").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert "exports" in at.session_state
 
     at.run()
-    at.checkbox[0].check().run()  # 删除完全重复的行
+    _checkbox(at, "删除完全重复的行").check().run()
     assert "exports" not in at.session_state
     assert not at.get("download_button")
 
@@ -125,7 +127,7 @@ def test_downloaded_csv_and_xlsx_agree(app):
     """下载的 CSV 与 XLSX 行数、编号、金额必须一致，且能被重新打开。"""
     at = app()
     at.get("file_uploader")[0].upload("订单.csv", SAMPLE_CSV, "text/csv").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
 
     exports = at.session_state["exports"]
     csv_back = pd.read_csv(BytesIO(exports["csv"]), dtype=str, keep_default_na=False)
@@ -200,7 +202,7 @@ def test_switch_to_over_limit_sheet_keeps_page_usable(app, monkeypatch):
     monkeypatch.setattr(cleaning, "MAX_ROWS", 5)
     at = app()
     at.get("file_uploader")[0].upload("两表.xlsx", _big_then_small_xlsx()).run()
-    at.selectbox[0].select("大表").run()
+    _selectbox(at, "选择要读取的工作表").select("大表").run()
 
     assert not list(at.exception)
     errors = [e.value for e in at.error]
@@ -214,9 +216,9 @@ def test_removed_rows_sample_toggle_shows_reason(app):
     """勾「查看被删掉的行样例」后，页面列出被删的行和删除原因。"""
     at = app()
     at.get("file_uploader")[0].upload("订单.csv", SAMPLE_CSV, "text/csv").run()
-    at.checkbox[0].check().run()  # 删除完全重复的行
+    _checkbox(at, "删除完全重复的行").check().run()
 
-    toggle = next(c for c in at.checkbox if c.label.startswith("查看被删掉的行样例"))
+    toggle = _checkbox(at, "查看被删掉的行样例")
     toggle.check().run()
     assert not list(at.exception)
 
@@ -272,10 +274,10 @@ def test_multi_sheet_selectbox_reads_chosen_sheet(app):
     assert [s.label for s in at.selectbox] == ["选择要读取的工作表"]
     assert {m.label: m.value for m in at.metric} == {"行数": "2", "列数": "2"}
 
-    at.selectbox[0].select("第二张").run()
+    _selectbox(at, "选择要读取的工作表").select("第二张").run()
     assert not list(at.exception)
     assert {m.label: m.value for m in at.metric} == {"行数": "3", "列数": "3"}
-    assert at.dataframe[0].value["名称"].tolist() == ["甲", "乙", "丙"]
+    assert _dataframe(at, "名称").value["名称"].tolist() == ["甲", "乙", "丙"]
 
 
 def _special_name_xlsx() -> bytes:
@@ -303,16 +305,16 @@ def test_special_char_sheet_names_in_ui(app):
     at = app()
     at.get("file_uploader")[0].upload("特殊表名.xlsx", _special_name_xlsx()).run()
     assert not list(at.exception)
-    assert at.selectbox[0].options == ["Sales & Marketing", "A<B>C", '他说"好" & 报价']
+    assert _selectbox(at, "选择要读取的工作表").options == ["Sales & Marketing", "A<B>C", '他说"好" & 报价']
     assert {m.label: m.value for m in at.metric} == {"行数": "1", "列数": "2"}
 
-    at.selectbox[0].select('他说"好" & 报价').run()
+    _selectbox(at, "选择要读取的工作表").select('他说"好" & 报价').run()
     assert not list(at.exception)
     assert {m.label: m.value for m in at.metric} == {"行数": "1", "列数": "1"}
 
-    at.selectbox[0].select("A<B>C").run()
+    _selectbox(at, "选择要读取的工作表").select("A<B>C").run()
     assert {m.label: m.value for m in at.metric} == {"行数": "1", "列数": "1"}
-    assert at.dataframe[0].value["编号"].tolist() == ["S1"]
+    assert _dataframe(at, "编号").value["编号"].tolist() == ["S1"]
 
 
 def test_dedupe_by_column_ui_end_to_end(app):
@@ -321,13 +323,13 @@ def test_dedupe_by_column_ui_end_to_end(app):
     at.get("file_uploader")[0].upload("重复订单.csv", DEDUPE_CSV, "text/csv").run()
     assert {m.label: m.value for m in at.metric} == {"行数": "3", "列数": "4"}
 
-    at.checkbox[2].check().run()  # 按指定列去重
-    at.multiselect[1].select("订单号").run()
+    _checkbox(at, "按指定列去重").check().run()
+    _multiselect(at, "选择去重用的列").select("订单号").run()
     assert not list(at.exception)
     # 别让用户盲选：第 4 步的「每一步删掉多少行」要写明按列去重删了 1 行
     assert _step_counts(at).get("按指定列去重") == 1
 
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     back = pd.read_csv(BytesIO(at.session_state["exports"]["csv"]), dtype=str, keep_default_na=False)
     assert back.shape == (2, 4)
     assert back["订单号"].tolist() == ["A001", "A002"]
@@ -350,10 +352,10 @@ def test_new_dedupe_option_invalidates_downloads(app):
     """改了去重列（新选项）后，之前生成的旧导出必须失效。"""
     at = app()
     at.get("file_uploader")[0].upload("重复订单.csv", DEDUPE_CSV, "text/csv").run()
-    at.button[0].click().run()
+    _button(at, "生成下载文件").click().run()
     assert "exports" in at.session_state
 
-    at.checkbox[2].check().run()
-    at.multiselect[1].select("订单号").run()
+    _checkbox(at, "按指定列去重").check().run()
+    _multiselect(at, "选择去重用的列").select("订单号").run()
     assert "exports" not in at.session_state
     assert not at.get("download_button")
