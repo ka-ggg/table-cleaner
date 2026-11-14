@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from datetime import datetime
 
 import cleaning
@@ -31,6 +32,13 @@ from cleaning import (
 APP_VERSION = cleaning.__version__
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 JSON_MIME = "application/json"
+
+# 解析缓存只处理 ≤ 8 MB 的上传：更大的文件在会话里再复制一份 DataFrame 不划算。
+# 8 MB 是规划 fixture（50k×12，约 4–6 MB）仍能从缓存受益、又不会让会话内存翻倍的折中值。
+# 超过阈值仍会算文件指纹（导出失效要用），只是不走 st.cache_data。
+PARSE_CACHE_MAX_BYTES = 8 * 1024 * 1024
+# 计算反馈阈值（规划 5.2）：超过 2 万行时 spinner 里带上行数×列数，让等待有依据。
+FEEDBACK_SPINNER_MAX_ROWS = 20_000
 
 st.set_page_config(page_title="表格清洗小工具", page_icon="🧹", layout="centered")
 
@@ -177,7 +185,111 @@ def rules_from_state(ops: ColumnOps) -> dict:
 # ---------------------------------------------------------------- 读取文件
 
 
-def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, bytes | None, LoadedTable] | None:
+@st.cache_data(scope="session", max_entries=2, show_spinner=False)
+def _parse_cached(
+    filename: str,
+    digest: str,
+    _data: bytes,
+    header_row: int,
+    sheet: str | None,
+    limits: cleaning.Limits,
+    timeout: float | None,
+) -> LoadedTable:
+    """解析缓存：同一会话里反复 rerun 不再重复读同一个文件。
+
+    ``_data`` 以下划线开头，Streamlit 不会对它做哈希（4–10 MB 的字节每次重算
+    sha256 是纯浪费）；``digest`` 已经代表内容，内容一变必 miss。
+    键里还有 header_row / sheet / limits / timeout：换表头、换工作表、改上限或
+    超时都必须重新解析。``max_entries=2`` 只留当前表和上一张表，防止来回换表
+    时解析结果无限堆积。
+    """
+    return load_table(
+        filename,
+        _data,
+        sheet=sheet,
+        header_row=header_row,
+        timeout=timeout,
+        limits=limits,
+    )
+
+
+def _parse_upload(
+    filename: str,
+    digest: str,
+    data: bytes,
+    header_row: int,
+    sheet: str | None,
+    limits: cleaning.Limits,
+    timeout: float | None,
+) -> LoadedTable:
+    """≤ 8 MB 走解析缓存；更大的文件直接读，避免会话里多份大 DataFrame 叠加。"""
+    if len(data) > PARSE_CACHE_MAX_BYTES:
+        return load_table(filename, data, sheet=sheet, header_row=header_row, timeout=timeout, limits=limits)
+    return _parse_cached(filename, digest, data, header_row, sheet, limits, timeout)
+
+
+def _file_digest(upload: object, data: bytes) -> str:
+    """对上传字节算 sha256；按 (file_id, size) 记住，避免每次 rerun 重算一遍。
+
+    ``file_id`` 是 Streamlit 给每个上传文件的稳定标识；拿不到时（旧版本/特殊
+    运行环境）退回每轮重算——10 MB 只要几十毫秒，不影响正确性。
+    """
+    file_id = getattr(upload, "file_id", None)
+    cached = st.session_state.get("_文件指纹")
+    if file_id is not None and cached and cached.get("file_id") == file_id and cached.get("size") == len(data):
+        return str(cached["digest"])
+    digest = hashlib.sha256(data).hexdigest()
+    st.session_state["_文件指纹"] = {"file_id": file_id, "size": len(data), "digest": digest}
+    return digest
+
+
+def _checks_for(
+    df: pd.DataFrame,
+    digest: str,
+    header_row: int,
+    sheet: str | None,
+) -> dict[str, object]:
+    """检查结果只依赖数据本身，按 (文件, 表头行, 工作表) 缓存一个槽位。
+
+    规划里写的是「按 digest 缓存」；实际换表头行或换工作表后同一份文件的
+    DataFrame 会变，所以键里补上 header_row 和 sheet，避免把上一张表的空值/
+    重复行数量显示到这一张表上。
+    """
+    key = (digest, header_row, sheet)
+    cached = st.session_state.get("_检查缓存")
+    if cached is not None and cached.get("key") == key:
+        return cached
+    cached = {
+        "key": key,
+        "stats": summarize(df),
+        "missing": find_missing(df),
+        "suspicious": find_suspicious(df),
+    }
+    st.session_state["_检查缓存"] = cached
+    return cached
+
+
+def _reset_source_caches(digest: str, header_row: int, sheet: str | None) -> None:
+    """换文件/换表/换表头时清掉旧数据槽，防止拿旧结果。
+
+    解析缓存由 st.cache_data 自己按 digest 隔离（session 作用域、最多 2 条）；
+    session_state 里的检查/流水线各只有一个槽位，这里显式作废。
+    """
+    key = (digest, header_row, sheet)
+    if st.session_state.get("_当前源") != key:
+        st.session_state.pop("_检查缓存", None)
+        st.session_state.pop("_流水线缓存", None)
+        st.session_state["_当前源"] = key
+
+
+def _compute_wait_text(rows: int, cols: int) -> str:
+    """清洗未命中时的 spinner 文案：小表短句，大表带行列数（规划 5.2）。"""
+    if rows > FEEDBACK_SPINNER_MAX_ROWS:
+        return f"正在重新计算…（{rows:,} 行 × {cols:,} 列）"
+    return "正在重新计算…"
+
+
+def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, bytes | None, LoadedTable, str] | None:
     """读取上传文件或样例数据；出错时展示原因并返回 None。"""
     # 不限制选择器类型：让 .txt/.xls 也能选中，由 load_table 给中文提示，
     # 否则只会看到组件自带的英文报错。
@@ -200,20 +312,24 @@ def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, byt
     if upload is not None:
         name = upload.name
         data = upload.getvalue()
+        digest = _file_digest(upload, data)
         try:
             # 大文件在手机上最容易「感觉卡住」，这里明确告诉用户正在干什么
             with st.spinner("正在读取并预检文件…（大文件需要几秒）"):
-                loaded = load_table(
+                loaded = _parse_upload(
                     name,
+                    digest,
                     data,
-                    header_row=int(header_row),
-                    timeout=timeout,
-                    limits=limits,
+                    int(header_row),
+                    None,
+                    limits,
+                    timeout,
                 )
             default = loaded  # 换表失败时退回它，保证页面不会只剩一句报错
             # 多工作表：先按默认表读一次拿到表名清单，用户换表后按所选表重读一次。
-            # 不缓存「表名→数据」：文件本来就在内存里，重读最多几秒，比维护缓存状态简单，
-            # 也不会把多张表同时留在内存里。换文件时 key 跟着文件名变，选择器回到默认值。
+            # 解析结果走 session 级缓存（最多留 2 张表），来回换表不用重复解析；
+            # 换文件时 digest 跟着内容变，缓存键自然隔离。选择器的 key 跟着文件名变，
+            # 换文件时回到默认值。
             if len(loaded.sheet_names) > 1:
                 names = list(loaded.sheet_names)
                 current = loaded.sheet_name if loaded.sheet_name in names else names[0]
@@ -226,13 +342,14 @@ def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, byt
                 if chosen != current:
                     try:
                         with st.spinner(f"正在读取工作表「{chosen}」…"):
-                            loaded = load_table(
+                            loaded = _parse_upload(
                                 name,
+                                digest,
                                 data,
-                                sheet=chosen,
-                                header_row=int(header_row),
-                                timeout=timeout,
-                                limits=limits,
+                                int(header_row),
+                                chosen,
+                                limits,
+                                timeout,
                             )
                     except TableError as exc:
                         # 换到的表超限/读不了时不能把页面变成「只剩一句报错」：
@@ -242,7 +359,7 @@ def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, byt
                         loaded.notes.append(
                             f"当前显示的是「{loaded.sheet_name}」；可以换一张表，或把这张表拆分后再上传。"
                         )
-            return name, data, loaded
+            return name, data, loaded, digest
         except TableError as exc:
             st.error(f"无法读取文件：{exc}")
             return None
@@ -255,14 +372,14 @@ def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, byt
             "样例数据",
             None,
             LoadedTable(make_sample_df(), ["这是虚构样例数据，不含真实个人信息。"]),
+            "demo",
         )
     st.info("请先上传文件，或打开上面的「样例数据」开关。")
     return None
 
 
-def show_checks(df: pd.DataFrame, stats: dict[str, int]) -> None:
-    """展示空值、重复行、可疑数据三类检查结果。"""
-    missing = find_missing(df)
+def show_checks(stats: dict[str, int], missing: pd.Series, suspicious: dict[str, dict[str, int]]) -> None:
+    """展示空值、重复行、可疑数据三类检查结果（值由 main 统一取缓存）。"""
     missing_rows = [{"列名": str(col), "空值数量": int(count)} for col, count in missing.items() if count > 0]
     if missing_rows:
         st.write("各列空值数量")
@@ -273,7 +390,6 @@ def show_checks(df: pd.DataFrame, stats: dict[str, int]) -> None:
     st.write(f"完全重复的行：**{stats['完全重复行']}** 行")
     st.caption(DUPLICATE_RULE)
 
-    suspicious = find_suspicious(df)
     if suspicious:
         rows = [
             {"列名": col, "问题": issue, "单元格数": count}
@@ -344,43 +460,44 @@ def show_comparison(
     df: pd.DataFrame,
     options: CleanOptions,
     timeout: float | None,
-) -> tuple[cleaning.CleanReport, dict[str, int]] | None:
-    """第 5 步：算清洗结果并展示前后对比；超时/失败时给中文提示并停止。"""
+    digest: str,
+    sheet: str | None,
+    stats: dict[str, int],
+) -> cleaning.CleanReport | None:
+    """第 5 步：算清洗结果并展示前后对比；超时/失败时给中文提示并停止。
+
+    流水线缓存是 session_state 单槽：缓存键包含文件指纹、表头行、工作表、
+    完整规则、样例开关与超时。键没变就直接复用上一次的 CleanReport，不再
+    调用 ``clean_table``；键一变（改规则/文件/表/表头）就重新算。
+    """
     st.subheader("5. 清洗前后对比")
     show_removed = st.checkbox("查看被删掉的行样例（最多 5 行）", key="规则_样例")
-    stats = summarize(df)
-    big = len(df) > cleaning.CHUNK_THRESHOLD_ROWS
-    bar = st.progress(0.0, text="正在分块清洗…") if big else None
-
-    def on_progress(done: int, total: int) -> None:
-        if bar is not None and total:
-            bar.progress(min(done / total, 1.0), text=f"正在分块清洗… {done:,}/{total:,} 行")
-
-    try:
-        report = cleaning.clean_table(
-            df,
-            options,
-            sample=5 if show_removed else 0,
-            progress=on_progress if big else None,
-            deadline=cleaning.Deadline(timeout),
-        )
-    except TableError as exc:
-        if bar is not None:
-            bar.empty()
-        st.error(f"清洗没有完成：{exc}")
-        st.info(
-            "本次没有生成任何下载文件。可以把文件拆小、少勾几张工作表，"
-            "或在左侧「高级设置 → 处理超时」里调大秒数后再试。"
-        )
-        st.stop()
-    if bar is not None:
-        bar.empty()
+    sample = 5 if show_removed else 0
+    key = (digest, options.header_row, sheet, options, sample, timeout)
+    cached = st.session_state.get("_流水线缓存")
+    if cached is not None and cached.get("key") == key:
+        report = cached["report"]
+        stats_after = cached["stats_after"]
+        st.caption("已复用本次会话的计算结果（规则未变）。")
+    else:
+        rows, cols = len(df), len(df.columns)
+        started = time.perf_counter()
+        report = _compute_comparison(df, options, sample, timeout)
+        elapsed = time.perf_counter() - started
+        stats_after = summarize(report.df)
+        st.session_state["_流水线缓存"] = {
+            "key": key,
+            "report": report,
+            "stats_after": stats_after,
+            "elapsed": elapsed,
+        }
+        st.caption(f"计算完成：{rows:,} 行 × {cols:,} 列，用时 {elapsed:.1f} 秒。")
 
     for note in report.notes:
         st.warning(note)
     cleaned = report.df
     st.dataframe(
-        pd.DataFrame({"清洗前": stats, "清洗后": summarize(cleaned)}),
+        pd.DataFrame({"清洗前": stats, "清洗后": stats_after}),
         width="stretch",
     )
     if report.steps:
@@ -406,17 +523,76 @@ def show_comparison(
         st.dataframe(cleaned.head(10), width="stretch", hide_index=True)
     else:
         st.info("当前没有实际删除任何行，也没有改列。CSV 若开启防公式，危险开头的文本会加前缀；关闭后与原数据一致。")
-    return report, stats
+    return report
 
 
+def _compute_comparison(
+    df: pd.DataFrame,
+    options: CleanOptions,
+    sample: int,
+    timeout: float | None,
+) -> cleaning.CleanReport:
+    """真正调用 clean_table 的未命中路径：小表用 spinner，大表保留分块进度条。"""
+    rows, cols = len(df), len(df.columns)
+    if rows > cleaning.CHUNK_THRESHOLD_ROWS:
+        bar = st.progress(0.0, text="正在分块清洗…")
+
+        def on_progress(done: int, total: int) -> None:
+            if total:
+                bar.progress(min(done / total, 1.0), text=f"正在分块清洗… {done:,}/{total:,} 行")
+
+        try:
+            report = cleaning.clean_table(
+                df,
+                options,
+                sample=sample,
+                progress=on_progress,
+                deadline=cleaning.Deadline(timeout),
+            )
+        except TableError as exc:
+            bar.empty()
+            _show_compute_error(exc)
+            st.stop()
+        bar.empty()
+        return report
+
+    with st.spinner(_compute_wait_text(rows, cols)):
+        try:
+            return cleaning.clean_table(
+                df,
+                options,
+                sample=sample,
+                deadline=cleaning.Deadline(timeout),
+            )
+        except TableError as exc:
+            _show_compute_error(exc)
+            st.stop()
+    raise AssertionError("unreachable")  # pragma: no cover - st.stop() 已经终止
+
+
+def _show_compute_error(exc: TableError) -> None:
+    """清洗失败时的中文提示；不生成任何下载。"""
+    st.error(f"清洗没有完成：{exc}")
+    st.info(
+        "本次没有生成任何下载文件。可以把文件拆小、少勾几张工作表，或在左侧「高级设置 → 处理超时」里调大秒数后再试。"
+    )
+
+
+@st.fragment
 def show_export(
     name: str,
+    digest: str,
     loaded: LoadedTable,
     cleaned: pd.DataFrame,
     options: CleanOptions,
     timeout: float | None,
 ) -> None:
-    """第 6 步：导出选项 + 生成下载（带时间戳文件名，不覆盖原文件）。"""
+    """第 6 步：导出选项 + 生成下载（带时间戳文件名，不覆盖原文件）。
+
+    整个导出区是一个 ``st.fragment``：点「生成下载文件」、切换防护/编号模式只
+    重跑这一块，不重跑上传/检查/清洗。规则、文件或表头变化仍会整页 rerun，
+    签名（含源文件 digest 和文件名）不一致时旧 ``exports`` 立即失效。
+    """
     st.subheader("6. 生成并下载清洗结果")
     st.caption(
         "下载不会覆盖你上传的原文件；文件只在内存中处理，不保存到服务器。"
@@ -443,9 +619,12 @@ def show_export(
 
     # 用清洗结果的内容做签名：选项没变就复用已生成的文件，避免重复生成；
     # 选项一变（数据/防护模式/列变换/编号模式变了）就丢弃旧文件，防止下载到上一次的结果。
+    # 源文件 digest 与文件名也进签名：同名不同内容、同内容不同文件名都不会残留旧下载名。
     row_hashes = pd.util.hash_pandas_object(cleaned, index=True).to_numpy()
     content_digest = hashlib.sha256(row_hashes.tobytes()).hexdigest()
     signature = (
+        name,
+        digest,
         len(cleaned),
         tuple(str(col) for col in cleaned.columns),
         tuple(str(dtype) for dtype in cleaned.dtypes),
@@ -461,7 +640,7 @@ def show_export(
         exports = None
 
     if st.button("生成下载文件", key="生成下载"):
-        with st.spinner("正在生成，数据多时需要几秒…"):
+        with st.spinner("正在生成下载文件…（大表 XLSX 可能较慢）"):
             deadline = cleaning.Deadline(timeout)
             try:
                 deadline.check("生成 XLSX")
@@ -712,10 +891,14 @@ def main() -> None:
     source = get_source(limits, timeout)
     if source is None:
         return
-    name, data, loaded = source
+    name, data, loaded, digest = source
     df = loaded.df
     columns = [str(column) for column in df.columns]
     st.session_state["_当前列"] = columns
+    header_row = int(st.session_state.get("表头行", 1))
+    # 换文件/换表/换表头后，旧数据的检查与清洗结果必须立刻作废，不能先显示旧数字。
+    _reset_source_caches(digest, header_row, loaded.sheet_name)
+    checks = _checks_for(df, digest, header_row, loaded.sheet_name)
 
     for note in st.session_state.pop("_模板提示", []):
         st.info(note)
@@ -723,7 +906,7 @@ def main() -> None:
         st.info(note)
 
     st.subheader("1. 文件概览")
-    stats = summarize(df)
+    stats = checks["stats"]
     left, right = st.columns(2)
     left.metric("行数", stats["行数"])
     right.metric("列数", stats["列数"])
@@ -733,7 +916,7 @@ def main() -> None:
 
     st.subheader("2. 检查结果")
     st.caption(MISSING_RULE)
-    show_checks(df, stats)
+    show_checks(stats, checks["missing"], checks["suspicious"])
 
     for key in ("规则_空值列", "规则_去重列", "规则_删除列", "规则_转数字", "规则_转日期"):
         _sanitize_multiselect(key, columns)
@@ -744,7 +927,7 @@ def main() -> None:
     for problem in problems:
         st.error(f"进阶设置有格式问题：{problem}")
     options = CleanOptions(
-        header_row=int(st.session_state.get("表头行", 1)),
+        header_row=header_row,
         drop_duplicates=bool(st.session_state.get("规则_删除重复行", False)),
         dedupe_on=tuple(st.session_state.get("规则_去重列", [])) if st.session_state.get("规则_按列去重") else (),
         drop_missing_in=tuple(st.session_state.get("规则_空值列", []))
@@ -753,13 +936,12 @@ def main() -> None:
         columns=ops,
     )
 
-    result = show_comparison(df, options, timeout)
-    if result is None:
+    report = show_comparison(df, options, timeout, digest, loaded.sheet_name, stats)
+    if report is None:
         return
-    report, stats = result
     cleaned = report.df
 
-    show_export(name, loaded, cleaned, options, timeout)
+    show_export(name, digest, loaded, cleaned, options, timeout)
     show_batch(name, data, loaded, options, limits, timeout)
     show_templates(columns, ops, problems)
 
