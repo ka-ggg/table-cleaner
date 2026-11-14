@@ -213,13 +213,13 @@ def test_switch_to_over_limit_sheet_keeps_page_usable(app, monkeypatch):
 
 
 def test_removed_rows_sample_toggle_shows_reason(app):
-    """勾「查看被删掉的行样例」后，页面列出被删的行和删除原因。"""
+    """删行 >0 时点「查看被删样例」按钮，页面列出被删的行和删除原因。"""
     at = app()
     at.get("file_uploader")[0].upload("订单.csv", SAMPLE_CSV, "text/csv").run()
     _checkbox(at, "删除完全重复的行").check().run()
 
-    toggle = _checkbox(at, "查看被删掉的行样例")
-    toggle.check().run()
+    toggle = _button(at, "查看被删样例")
+    toggle.click().run()
     assert not list(at.exception)
 
     samples = [f.value for f in at.dataframe if "删除原因" in getattr(f.value, "columns", [])]
