@@ -7,6 +7,140 @@
 
 ---
 
+## v2.5.0 W1 测试补充（2026-11-14）
+
+> 本节是 v2.5.0 W1（P0-1 缓存 + `st.fragment`、P0-2 计算反馈）的实测追加；第 1–9 节保持 v2.0.1 历史记录，不覆盖。
+> **范围：** 只改 `app.py`（UI 层），并新增 `benchmarks/`、`tests/`、本报告；`cleaning/` 与依赖版本未改。
+
+### W1.1 环境
+
+| 项目 | 值 |
+| --- | --- |
+| 日期 | 2026-11-14 |
+| 操作系统 | Linux 容器（`Linux-7.0.0-44-generic-x86_64`，4 核 / 7934 MB） |
+| Python | 3.12.3 |
+| streamlit | 1.66.0 |
+| pandas | 3.1.1 |
+| numpy | 2.5.4 |
+| openpyxl | 3.1.5 |
+| pytest | 9.2.0 |
+| Ruff | 0.17.4 |
+| mypy | 2.4.1 |
+
+### W1.2 全量测试两遍
+
+```text
+$ python -m pytest -q -rs
+599 passed, 51 warnings in 52.28s
+
+$ python -m pytest -q -rs
+599 passed, 51 warnings in 53.39s
+
+$ python -m pytest --collect-only -q | tail -1
+599 tests collected in 1.95s
+```
+
+两遍一致：**599 passed / 0 skipped**。557 项既有测试语义未改；新增 W1 测试 42 项。
+
+### W1.3 新增 W1 测试
+
+| 文件 | 数量 | 覆盖 |
+| --- | ---: | --- |
+| `tests/test_v250_cache.py` | 22 | 解析/检查/清洗缓存命中与 miss；换文件/工作表/表头；`load_table`/`clean_table` 计数探针；下载失效矩阵（规则、目标列、表头、工作表、文件、模板、防护/编号模式、6 种列操作、同名不同内容/同内容不同文件名） |
+| `tests/test_v250_feedback.py` | 5 | 小表 spinner、>2 万行 spinner 带行×列、命中无 spinner + 「已复用」、>10 万行分块进度条、导出 spinner 文案 |
+| `tests/test_v250_golden.py` | 15 | CSV 3 种防护模式字节级、XLSX 解包内容级、CleanReport 字段级、AppTest 端到端金标、fixture 哈希 |
+
+### W1.4 质量门禁
+
+```text
+$ ruff format --check .
+54 files already formatted
+
+$ ruff check .
+All checks passed!
+
+$ mypy
+Found 4 errors in 1 file（checked 22 source files）
+```
+
+mypy 4 条均为 `cleaning/transform.py` 存量（EX-001~EX-004），与基线一致、无新增。
+
+### W1.5 50k 交互计时（同一台机器 / 同一 harness 对跑）
+
+fixture：50,000 行 × 12 列，种子 `20261114`，5.67 MB，sha256 `bdd65d6a11c34d89…`；生成参数与 harness 都在 `benchmarks/app_interaction.py`，大文件不提交。
+
+```bash
+# 基线侧先建独立 worktree，并把本次新增的 harness 拷进去（83a66ee 还没有它）
+git worktree add --detach /tmp/tc-v240-baseline 83a66ee
+cp benchmarks/app_interaction.py /tmp/tc-v240-baseline/benchmarks/
+
+# v2.4.0 基线（83a66ee 独立 worktree）
+cd /tmp/tc-v240-baseline && python benchmarks/app_interaction.py --json-out /tmp/bench-base.json
+
+# v2.5.0 W1
+python benchmarks/app_interaction.py --json-out /tmp/bench-new.json
+```
+
+| 场景 | 83a66ee 中位数(s) | W1 中位数(s) | 改善 |
+| --- | ---: | ---: | ---: |
+| 冷上传 + 首次渲染 | 1.245 | **0.887** | 28.8% |
+| 无改动 rerun | 0.776 | **0.117** | 84.9% |
+| 行规则：删除完全重复的行 | 0.796 | **0.192** | 75.9% |
+| 行规则：删除空值行（已选备注） | 0.919 | **0.192** | 79.2% |
+| 行规则：按列去重（已选订单号） | 0.828 | **0.191** | 76.9% |
+| 切换公式防护模式 | 0.875 | **0.155** | 82.3% |
+| **warm 交互合计** | **0.827** | **0.179** | **78.4%** |
+| 导出点击（单独记录，不设 1 秒门槛） | 16.252 | 14.280 | 12.1% |
+
+判定：warm 中位数 **0.179 s ≤ 1.0 s**，相对基线改善 **78.4% ≥ 25%**；冷上传 + 首次渲染 **0.887 s ≤ 2.0 s**。每个 warm 交互 5 次取中位数；导出点击不计入 1 秒门槛。
+
+### W1.6 10 MB fixture 内存峰值
+
+命令：`python benchmarks/app_interaction.py --memory`（每个档位独立子进程，读 `/proc/self/status` 的 `VmHWM`）。
+
+| 档位 | fixture | 首次上传+渲染(s) | RSS 峰值增量(MB) | 备注 |
+| --- | --- | ---: | ---: | --- |
+| 50k×12 | 5.94 MB | 1.05 | +166.1 | 走解析缓存（session，`max_entries=2`） |
+| 10 MB 档 | 9.67 MB | 3.12 | +202.1 | >8 MB，跳过解析缓存直接 `load_table` |
+
+10 MB 档未超 10 MB 上传上限、未走解析缓存；峰值增量比 50k 档多约 36 MB，符合「大文件不叠加缓存副本」的预期。
+
+### W1.7 结果一致性金标
+
+金标在 `83a66ee` 的独立 worktree（先把 `benchmarks/capture_golden.py` 拷进去）用 `python benchmarks/capture_golden.py --out tests/fixtures/v250/golden.json --fixtures-dir tests/fixtures/v250` 现场生成，提交为 `tests/fixtures/v250/golden.json`；v2.5 测试只读金标。
+
+- CSV：`small_mixed.csv` ×（默认/规则）× 3 种防护模式，`sha256` 与基线**逐字节一致**；
+- XLSX：`text`/`number` 两种编号模式，解包后除 `docProps/core.xml`（写入时间）外逐条目字节一致；
+- `CleanReport.steps` / `removed` / `notes` 字段级一致；
+- AppTest 端到端：上传 fixture、勾 3 条规则、点生成，导出 CSV 命中金标 `705d779abe049818…`；
+- 本批 W1 未改 `cleaning/`，以上一致性与基线对跑结果相同。
+
+### W1.8 `st.fragment` spike 结论
+
+- **AppTest（streamlit 1.66.0）**：`AppTest.run()` 每次都会整脚本重跑，fragment 内的按钮点击也一样（full-run 计数 1→2）；因此 AppTest 只能验证「不报错、按钮和下载可用」，无法证明 fragment 隔离。
+- **真实无头浏览器（chrome-headless-shell 156）**：上传 fixture 后 caption 为「计算完成：9 行 × 12 列，用时 0.1 秒。」；点「生成下载文件」后 caption **不变**，出现 2 个下载按钮；在导出区切换公式防护模式后旧下载清空（0 个按钮），页面无 `Traceback`/`StreamlitAPIException`。
+- **结论：有条件采纳**，`@st.fragment` 只加在 `show_export`；下载失效行为由签名（新增源文件 digest 与文件名）兜底。回退路径（去掉装饰器、只保留缓存）未启用。
+
+### W1.9 图片证据
+
+`tests/fixtures/v250/evidence/`（900×1300、light 主题、同一 fixture、同一滚动位置）：
+
+- `before_v240_step5.png`：83a66ee，第 5 步无计算信息；
+- `after_v250_compute_done.png`：W1，首次计算后显示「计算完成：9 行 × 12 列，用时 0.0 秒。」；
+- `after_v250_cache_reuse.png`：W1，规则未变触发 rerun 后显示「已复用本次会话的计算结果（规则未变）。」。
+
+### W1.10 未执行
+
+| 项 | 状态 | 原因 |
+| --- | --- | --- |
+| Python 3.11 本地实跑 | 未执行 | 本机只有 3.12；CI 矩阵会跑 3.11/3.12 |
+| 真机/手机浏览器人工点击 | 未执行 | 容器内用无头 Chromium 覆盖了上传/生成/切模式；未做真机 |
+| 覆盖率（W4） | 未执行 | 按批次属于 W4，本批不改 CI |
+| W2–W6 | 未执行 | 按 issue 要求只做 W1 |
+| 多用户并发/500 万行 | 未执行 | 不在 v2.5.0 范围 |
+
+---
+
 ## 0. v2.3.0 测试补充（2026-11-07）
 
 > 本节是 v2.3.0 的实测追加；下方第 1–9 节保持 v2.0.1 时的历史记录，不覆盖、不改写。
