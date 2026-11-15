@@ -7,8 +7,11 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
+import unicodedata
 from datetime import datetime
+from typing import NamedTuple
 
 import cleaning
 import pandas as pd
@@ -39,6 +42,98 @@ JSON_MIME = "application/json"
 PARSE_CACHE_MAX_BYTES = 8 * 1024 * 1024
 # 计算反馈阈值（规划 5.2）：超过 2 万行时 spinner 里带上行数×列数，让等待有依据。
 FEEDBACK_SPINNER_MAX_ROWS = 20_000
+
+
+class ScenarioPreset(NamedTuple):
+    """一个场景预设：场景名 + 关键列同义词 + 建议动作（规划 5.4）。"""
+
+    scene: str
+    keywords: tuple[tuple[str, tuple[str, ...]], ...]
+    suggestion: str
+
+
+class ScenarioHint(NamedTuple):
+    """匹配到的场景提示；只用于渲染一行文字，不携带任何控件状态。"""
+
+    scene: str
+    matched: tuple[str, ...]
+    suggestion: str
+
+    def text(self) -> str:
+        joined = "、".join(self.matched)
+        return f"识别到类似「{self.scene}」：命中{joined}；常见处理是{self.suggestion}（仅提示，不会自动勾选）。"
+
+
+# 列名同义词表来自规划 5.4：命中 ≥2 个关键列才提示，最多显示 2 条。
+SCENARIO_PRESETS: tuple[ScenarioPreset, ...] = (
+    ScenarioPreset(
+        scene="电商订单",
+        keywords=(
+            ("订单号", ("订单号", "订单编号", "单号")),
+            ("金额", ("金额", "实付金额", "付款金额")),
+            ("收货人", ("收货人", "客户", "买家")),
+            ("收货地址", ("收货地址", "地址")),
+            ("下单时间", ("下单时间", "支付时间")),
+            ("商品", ("商品", "数量")),
+        ),
+        suggestion="按订单号去重、金额转数字",
+    ),
+    ScenarioPreset(
+        scene="快递对账",
+        keywords=(
+            ("运单号", ("运单号", "快递单号", "物流单号")),
+            ("寄件时间", ("寄件时间", "发货时间")),
+            ("重量", ("重量",)),
+            ("运费", ("运费", "快递费")),
+            ("目的地", ("目的地", "收件地址")),
+            ("签收状态", ("签收状态",)),
+        ),
+        suggestion="按运单号去重、运费转数字",
+    ),
+    ScenarioPreset(
+        scene="库存",
+        keywords=(
+            ("SKU", ("SKU", "商品编码", "货号")),
+            ("仓库", ("仓库", "仓位")),
+            ("库存", ("库存", "库存数量", "可用库存")),
+            ("安全库存", ("安全库存",)),
+            ("更新时间", ("更新时间", "盘点时间")),
+        ),
+        suggestion="按 SKU 去重、库存转数字",
+    ),
+)
+
+# 匹配前去掉列名末尾的单位/说明括号，例如「金额（元）」「重量(kg)」。
+_PAREN_SUFFIX = re.compile(r"\s*\([^()]{0,12}\)\s*$")
+
+
+def _normalize_column_name(column: object) -> str:
+    """列名归一化：全角转半角、大小写不敏感、去空白、去末尾括号后缀。"""
+    text = unicodedata.normalize("NFKC", str(column)).casefold()
+    while True:
+        stripped = _PAREN_SUFFIX.sub("", text)
+        if stripped == text:
+            break
+        text = stripped
+    text = re.sub(r"\s+", "", text)
+    return text.strip("_-·:：")
+
+
+def match_scenario_hints(columns: list[str]) -> list[ScenarioHint]:
+    """按列名匹配场景预设；纯函数，只读列名、不写任何控件状态。"""
+    normalized = {_normalize_column_name(column) for column in columns}
+    hints: list[ScenarioHint] = []
+    for preset in SCENARIO_PRESETS:
+        matched = tuple(
+            label
+            for label, synonyms in preset.keywords
+            if any(_normalize_column_name(synonym) in normalized for synonym in synonyms)
+        )
+        if len(matched) >= 2:
+            hints.append(ScenarioHint(preset.scene, matched, preset.suggestion))
+    hints.sort(key=lambda hint: len(hint.matched), reverse=True)
+    return hints[:2]
+
 
 st.set_page_config(page_title="表格清洗小工具", page_icon="🧹", layout="centered")
 
@@ -378,6 +473,30 @@ def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, byt
     return None
 
 
+def render_recent_template_entry(columns: list[str]) -> None:
+    """第 1 步概览之后的「套用最近模板」入口（规划 5.3）。
+
+    只还原规则并触发下一轮重算；不自动生成下载。列名对不上时先提示，
+    真正的过滤仍交给 ``apply_pending_template`` 使用的 ``filter_for_columns``。
+    """
+    recent = st.session_state.get("_最近模板")
+    if not recent:
+        return
+    name = str(recent.get("名称", "最近模板"))
+    rules = recent.get("规则") or {}
+    _, notes = cleaning.filter_for_columns(rules, columns)
+    with st.container(border=True):
+        st.markdown("**套用最近模板**")
+        st.write(f"模板：**{name}**")
+        st.caption(f"规则摘要：{cleaning.summarize_rules(rules)}")
+        if notes:
+            st.caption("模板里有当前文件没有的列；套用时这些规则会被跳过，并在页面上提示。")
+        st.caption("只还原规则；不会自动生成下载，请在下方第 5 步确认对比。")
+        if st.button(f"一键套用「{name}」", key="一键套用最近模板"):
+            st.session_state["_待应用模板"] = rules
+            st.rerun()
+
+
 def show_checks(stats: dict[str, int], missing: pd.Series, suspicious: dict[str, dict[str, int]]) -> None:
     """展示空值、重复行、可疑数据三类检查结果（值由 main 统一取缓存）。"""
     missing_rows = [{"列名": str(col), "空值数量": int(count)} for col, count in missing.items() if count > 0]
@@ -411,8 +530,10 @@ def show_checks(stats: dict[str, int], missing: pd.Series, suspicious: dict[str,
 
 
 def show_row_rules(columns: list[str]) -> None:
-    """第 3 步：行清洗选项（默认都不做）。"""
+    """第 3 步：行清洗选项（默认都不做）；顶部只显示场景提示，不勾选任何规则。"""
     st.subheader("3. 选择清洗操作（默认都不执行）")
+    for hint in match_scenario_hints(columns):
+        st.caption(hint.text())
     st.checkbox("删除完全重复的行", key="规则_删除重复行")
     drop_na = st.checkbox("删除指定列中有空值的行", key="规则_删除空值行")
     target_cols = st.multiselect("选择要检查空值的列", options=columns, disabled=not drop_na, key="规则_空值列")
@@ -471,7 +592,8 @@ def show_comparison(
     调用 ``clean_table``；键一变（改规则/文件/表/表头）就重新算。
     """
     st.subheader("5. 清洗前后对比")
-    show_removed = st.checkbox("查看被删掉的行样例（最多 5 行）", key="规则_样例")
+    # 样例开关不再是控件：删行 >0 时用提示条里的按钮打开，规则随之进入缓存键重算。
+    show_removed = bool(st.session_state.get("规则_样例", False))
     sample = 5 if show_removed else 0
     key = (digest, options.header_row, sheet, options, sample, timeout)
     cached = st.session_state.get("_流水线缓存")
@@ -495,6 +617,12 @@ def show_comparison(
 
     for note in report.notes:
         st.warning(note)
+    total_deleted = sum(report.steps.values())
+    if total_deleted > 0:
+        st.warning(f"本次共删 {total_deleted:,} 行。")
+        if not show_removed and st.button("查看被删样例（前 5 行）", key="查看被删样例"):
+            st.session_state["规则_样例"] = True
+            st.rerun()
     cleaned = report.df
     st.dataframe(
         pd.DataFrame({"清洗前": stats, "清洗后": stats_after}),
@@ -837,11 +965,15 @@ def show_templates(columns: list[str], ops: ColumnOps, problems: list[str]) -> N
         token = f"{uploaded.name}:{uploaded.size}"
         if st.session_state.get("_模板已读") != token:
             try:
-                rules = cleaning.loads(uploaded.getvalue())
+                info = cleaning.load_template(uploaded.getvalue())
             except TableError as exc:
                 st.error(f"模板读不了：{exc}")
             else:
-                st.session_state["_待应用模板"] = rules
+                st.session_state["_最近模板"] = {
+                    "名称": info.name or uploaded.name.rsplit(".", 1)[0] or "上传的模板",
+                    "规则": info.rules,
+                }
+                st.session_state["_待应用模板"] = info.rules
                 st.session_state["_模板已读"] = token
                 st.rerun()
 
@@ -856,6 +988,7 @@ def show_templates(columns: list[str], ops: ColumnOps, problems: list[str]) -> N
                 st.error(f"这套规则存不下来：{exc}")
             else:
                 saved[template["名称"]] = template
+                st.session_state["_最近模板"] = {"名称": template["名称"], "规则": template["规则"]}
                 st.success(f"已保存模板「{template['名称']}」；下面可以「下载」存到手机或「套用」。")
 
     if not saved:
@@ -866,6 +999,7 @@ def show_templates(columns: list[str], ops: ColumnOps, problems: list[str]) -> N
         title_col.markdown(f"**{template_name}**")
         title_col.caption(cleaning.summarize_rules(template["规则"]))
         if apply_col.button("套用", key=f"模板_套用_{template_name}"):
+            st.session_state["_最近模板"] = {"名称": template_name, "规则": template["规则"]}
             st.session_state["_待应用模板"] = template["规则"]
             st.rerun()
         download_col.download_button(
@@ -913,6 +1047,8 @@ def main() -> None:
     st.caption("列名：" + " ｜ ".join(columns))
     st.write("数据预览（前 10 行）")
     st.dataframe(df.head(10), width="stretch", hide_index=True)
+
+    render_recent_template_entry(columns)
 
     st.subheader("2. 检查结果")
     st.caption(MISSING_RULE)
