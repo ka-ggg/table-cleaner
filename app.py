@@ -106,6 +106,20 @@ SCENARIO_PRESETS: tuple[ScenarioPreset, ...] = (
 # 匹配前去掉列名末尾的单位/说明括号，例如「金额（元）」「重量(kg)」。
 _PAREN_SUFFIX = re.compile(r"\s*\([^()]{0,12}\)\s*$")
 
+# ---------------------------------------------------------------- 未生效规则
+# 5.6：只认 cleaning/transform.py 里固定的几条「配置没作用到东西」说明。
+# 匹配集中在这里，避免把“工作表跳过”“转换失败留原文”等无关说明算成未生效。
+_REPORT_DROP_MISSING = re.compile(r"^要删除的列不存在，已忽略：(.+?)。$")
+_REPORT_ORDER_MISSING = re.compile(r"^要调整顺序的列不存在，已忽略：(.+?)。$")
+_REPORT_TO_NUMBER_MISSING = re.compile(r"^要转数字的列「(.+?)」不存在，已忽略。$")
+_REPORT_TO_DATE_MISSING = re.compile(r"^要转日期的列「(.+?)」不存在，已忽略。$")
+_REPORT_RENAME_MISSING = re.compile(r"^要重命名的列「(.+?)」不存在，已忽略。$")
+_REPORT_RENAME_COLLISION = re.compile(r"^列名「(.+?)」已经存在，没有把「(.+?)」改成它。$")
+_COMPUTED_UNUSABLE = ("没有生成", "和已有列重名，已跳过")
+# 预览面板只多算用户选中的列；前 5 个值、每个值最多显示 24 个字符。
+_PREVIEW_SAMPLE_SIZE = 5
+_PREVIEW_MAX_CHARS = 24
+
 
 def _normalize_column_name(column: object) -> str:
     """列名归一化：全角转半角、大小写不敏感、去空白、去末尾括号后缀。"""
@@ -176,6 +190,30 @@ def sidebar_settings() -> tuple[cleaning.Limits, float | None]:
                 step=10_000,
                 key="上限_行数",
             )
+            max_cols = st.number_input(
+                "单表列数上限",
+                min_value=1,
+                max_value=None,
+                value=int(defaults.max_cols),
+                step=100,
+                key="上限_列数",
+            )
+            max_cells = st.number_input(
+                "单元格总数上限",
+                min_value=1,
+                max_value=None,
+                value=int(defaults.max_cells),
+                step=100_000,
+                key="上限_单元格",
+            )
+            xlsx_mb = st.number_input(
+                "XLSX 解压后上限（MB）",
+                min_value=1,
+                max_value=None,
+                value=int(defaults.max_xlsx_uncompressed_mb),
+                step=10,
+                key="上限_XLSX_MB",
+            )
             timeout = st.number_input(
                 "处理超时（秒，0 = 不限）",
                 min_value=0,
@@ -191,10 +229,17 @@ def sidebar_settings() -> tuple[cleaning.Limits, float | None]:
             "`TABLE_CLEANER_MAX_XLSX_MB`、`TABLE_CLEANER_TIMEOUT_SECONDS` 改默认值（见 README）。"
         )
         st.caption(
-            f"当前：单文件 {int(upload_mb)} MB · {int(max_rows):,} 行 · "
+            f"当前：单文件 {int(upload_mb)} MB · {int(max_rows):,} 行 · {int(max_cols):,} 列 · "
+            f"{int(max_cells):,} 单元格 · XLSX 解压 {int(xlsx_mb)} MB · "
             f"超时 {'不限' if not timeout else f'{int(timeout)} 秒'}"
         )
-    limits = defaults._replace(max_upload_bytes=int(upload_mb) * 1024 * 1024, max_rows=int(max_rows))
+    limits = defaults._replace(
+        max_upload_bytes=int(upload_mb) * 1024 * 1024,
+        max_rows=int(max_rows),
+        max_cols=int(max_cols),
+        max_cells=int(max_cells),
+        max_xlsx_uncompressed_bytes=int(xlsx_mb) * 1024 * 1024,
+    )
     return limits, (float(timeout) if timeout else None)
 
 
@@ -259,6 +304,80 @@ def read_column_ops() -> tuple[ColumnOps, list[str]]:
         computed=pairs("规则_计算列", "新列名=表达式"),
     )
     return ops, problems
+
+
+def _split_note_names(text: str) -> list[str]:
+    """把「A、B」这种列名清单拆开；列名里极少带顿号，按它拆够用。"""
+    return [name for name in (part.strip() for part in text.split("、")) if name]
+
+
+def collect_ineffective_rules(
+    options: CleanOptions,
+    columns: list[str] | tuple[str, ...],
+    problems: list[str] | tuple[str, ...],
+    report_notes: list[str] | tuple[str, ...],
+    template_notes: list[str] | tuple[str, ...],
+    *,
+    is_drop_missing_checked: bool = False,
+    is_dedupe_checked: bool = False,
+) -> list[str]:
+    """收集「配置层面没有作用对象/被跳过」的规则（规划 5.6 / G-10）。
+
+    ``options`` 只保留真正会执行的配置，所以「勾了但没选列」需要调用方把控件
+    状态传进来（两个关键字参数）。像「转数字有 1 个格子失败留原文」「工作表
+    被跳过」这类说明不算未生效，不会被收进来。
+    """
+    issues: list[str] = []
+    if is_drop_missing_checked and not options.drop_missing_in:
+        issues.append("已勾选「删除指定列中有空值的行」，但没有选择列")
+    if is_dedupe_checked and not options.dedupe_on:
+        issues.append("已勾选「按指定列去重」，但没有选择列")
+
+    existing = {str(column) for column in columns}
+    # 「列顺序」不在这里直接比对：它用的是改名/计算后的新列名，拿原始列名比会误报。
+    # 其余四类用的都是原始（或删列后）列名，先按配置查一遍，再由 report.notes 补上
+    # “先删了列、后面又转换/改名”这类只有真正执行时才暴露的跳过。
+    missing: dict[str, list[str]] = {
+        "删列": [name for name in options.columns.drop if str(name) not in existing],
+        "列顺序": [],
+        "转数字": [name for name in options.columns.to_number if str(name) not in existing],
+        "转日期": [name for name in options.columns.to_date if str(name) not in existing],
+        "重命名": [old for old, _ in options.columns.rename if str(old) not in existing],
+    }
+    # report.notes 是清洗真正执行后的说明：它还能发现“先删了列、后面又改名”的跳过。
+    for note in report_notes:
+        text = str(note)
+        if match := _REPORT_DROP_MISSING.match(text):
+            missing["删列"].extend(_split_note_names(match.group(1)))
+        elif match := _REPORT_ORDER_MISSING.match(text):
+            missing["列顺序"].extend(_split_note_names(match.group(1)))
+        elif match := _REPORT_TO_NUMBER_MISSING.match(text):
+            missing["转数字"].append(match.group(1))
+        elif match := _REPORT_TO_DATE_MISSING.match(text):
+            missing["转日期"].append(match.group(1))
+        elif match := _REPORT_RENAME_MISSING.match(text):
+            missing["重命名"].append(match.group(1))
+        elif match := _REPORT_RENAME_COLLISION.match(text):
+            issues.append(f"重命名「{match.group(2)}」没有生效：列名「{match.group(1)}」已经存在")
+        elif text.startswith("计算列「") and any(flag in text for flag in _COMPUTED_UNUSABLE):
+            issues.append(text.rstrip("。"))
+        elif text.startswith("计算列里有空列名，已跳过"):
+            issues.append(text.rstrip("。"))
+
+    for label, names in missing.items():
+        unique = list(dict.fromkeys(names))
+        if unique:
+            issues.append(f"{label}规则引用了不存在的列：{'、'.join(unique)}")
+
+    for problem in problems:
+        issues.append(f"进阶设置文本格式有误，相关规则本次没有生效：{problem}")
+
+    for note in template_notes:
+        text = str(note).strip().rstrip("。")
+        if text:
+            issues.append(text)
+
+    return list(dict.fromkeys(issue for issue in issues if issue))
 
 
 def rules_from_state(ops: ColumnOps) -> dict:
@@ -374,6 +493,7 @@ def _reset_source_caches(digest: str, header_row: int, sheet: str | None) -> Non
     if st.session_state.get("_当前源") != key:
         st.session_state.pop("_检查缓存", None)
         st.session_state.pop("_流水线缓存", None)
+        st.session_state.pop("_转换预览", None)
         st.session_state["_当前源"] = key
 
 
@@ -384,11 +504,27 @@ def _compute_wait_text(rows: int, cols: int) -> str:
     return "正在重新计算…"
 
 
+LIMIT_HINT = "可在左侧「高级设置」里临时调大上限（只影响本次会话）。"
+
+
+def _show_read_error(message: str, exc: TableError) -> None:
+    """读取失败的中文提示：命中上限时顺带指出「高级设置」入口（不改 cleaning 文案）。"""
+    st.error(message)
+    if "上限" in str(exc):
+        st.info(LIMIT_HINT)
+
+
 def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, bytes | None, LoadedTable, str] | None:
     """读取上传文件或样例数据；出错时展示原因并返回 None。"""
     # 不限制选择器类型：让 .txt/.xls 也能选中，由 load_table 给中文提示，
     # 否则只会看到组件自带的英文报错。
     upload = st.file_uploader(f"上传 CSV 或 XLSX 文件（最大 {limits.max_upload_mb} MB）", key="主文件")
+    st.caption(
+        f"当前上限：单文件 {limits.max_upload_mb} MB · {limits.max_rows:,} 行 · "
+        f"{limits.max_cols:,} 列 · {limits.max_cells:,} 单元格 · "
+        f"XLSX 解压后 {limits.max_xlsx_uncompressed_mb} MB。"
+        "可在左侧「高级设置」临时调大（只影响本次会话）。"
+    )
     use_demo = st.toggle("没有文件？用虚构样例数据演示", value=False, key="样例开关")
     # 不传 value：初始值由 session_state 决定（模板可以预设），避免 Streamlit 警告
     header_row = st.number_input(
@@ -449,14 +585,14 @@ def get_source(limits: cleaning.Limits, timeout: float | None) -> tuple[str, byt
                     except TableError as exc:
                         # 换到的表超限/读不了时不能把页面变成「只剩一句报错」：
                         # 退回默认表并说清楚，用户还能继续换别的表。
-                        st.error(f"工作表「{chosen}」读不了：{exc}")
+                        _show_read_error(f"工作表「{chosen}」读不了：{exc}", exc)
                         loaded = default
                         loaded.notes.append(
                             f"当前显示的是「{loaded.sheet_name}」；可以换一张表，或把这张表拆分后再上传。"
                         )
             return name, data, loaded, digest
         except TableError as exc:
-            st.error(f"无法读取文件：{exc}")
+            _show_read_error(f"无法读取文件：{exc}", exc)
             return None
         except Exception:
             # 兜底：内存不足等意外情况也不要直接把 traceback 甩给用户
@@ -546,8 +682,102 @@ def show_row_rules(columns: list[str]) -> None:
         st.warning("已勾选按列去重，但还没有选择列，这一步暂时不会去重。")
 
 
-def show_column_rules(columns: list[str]) -> None:
+def _preview_text(value: object) -> str:
+    """预览里的单元格文本：压成一行，超长截断，避免把整段文本塞进页面。"""
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if len(text) > _PREVIEW_MAX_CHARS:
+        return text[:_PREVIEW_MAX_CHARS] + "…"
+    return text
+
+
+def _conversion_preview_info(df: pd.DataFrame, column: str, kind: str, digest: str) -> dict[str, object]:
+    """算一列的转换预览：前 5 个非空值 + 整列会保留原文的数量。
+
+    结果按 ``(digest, 列名, 类型)`` 缓存在 session_state；只读副本，不写回 df。
+    预览和真实清洗都调 ``cleaning.convert_to_number`` / ``convert_to_date``，
+    保证两处口径一致。
+    """
+    key = (digest, column, kind)
+    cache = st.session_state.get("_转换预览")
+    if cache is not None and key in cache:
+        return cache[key]
+
+    series = df[column].copy()
+    if kind == "number":
+        converted, failed = cleaning.convert_to_number(series)
+    else:
+        converted, failed = cleaning.convert_to_date(series)
+
+    cleaned = series.astype("string").str.strip()
+    non_empty = cleaned.notna() & cleaned.str.len().gt(0)
+    rows: list[dict[str, str]] = []
+    convertible = 0
+    for index in series.index[non_empty][:_PREVIEW_SAMPLE_SIZE]:
+        after = converted.loc[index]
+        if isinstance(after, str):
+            shown = "保留原文"
+        else:
+            shown = _preview_text(after)
+            convertible += 1
+        rows.append({"原值": _preview_text(series.loc[index]), "转换后": shown})
+
+    info: dict[str, object] = {
+        "kind": kind,
+        "column": column,
+        "rows": rows,
+        "sample_count": len(rows),
+        "convertible": convertible,
+        "failed": int(failed),
+        "non_empty": int(non_empty.sum()),
+    }
+    cache = st.session_state.setdefault("_转换预览", {})
+    cache[key] = info
+    return info
+
+
+def _preview_caption(info: dict[str, object]) -> str:
+    """一行说明：`转数字「金额」：前 5 个中 4 个可转换；整列 1 个值将保留原文。`"""
+    label = "转数字" if info["kind"] == "number" else "转日期"
+    non_empty = int(info["non_empty"])
+    failed = int(info["failed"])
+    if non_empty == 0:
+        return f"{label}「{info['column']}」：该列没有非空值。"
+    sample = f"前 {info['sample_count']} 个中 {info['convertible']} 个可转换"
+    if failed:
+        total = f"整列 {failed} 个值将保留原文"
+        if failed == non_empty:
+            total += "（整列保留原文）"
+    else:
+        total = "整列没有值会保留原文"
+    return f"{label}「{info['column']}」：{sample}；{total}。"
+
+
+def render_conversion_preview(df: pd.DataFrame, ops: ColumnOps, digest: str) -> None:
+    """在转数字/转日期选择器下方渲染预览；没有选中任何列时不显示。"""
+    if not (ops.to_number or ops.to_date):
+        return
+    with st.expander("转换预览（只预览，不改结果）", expanded=False):
+        for kind, columns, label in (
+            ("number", ops.to_number, "转数字"),
+            ("date", ops.to_date, "转日期"),
+        ):
+            for column in columns:
+                if column not in df.columns:
+                    continue
+                info = _conversion_preview_info(df, column, kind, digest)
+                st.markdown(f"**{label}「{column}」**")
+                st.caption(_preview_caption(info))
+                if info["rows"]:
+                    st.dataframe(
+                        pd.DataFrame(info["rows"]),
+                        width="stretch",
+                        hide_index=True,
+                    )
+
+
+def show_column_rules(df: pd.DataFrame, digest: str) -> None:
     """第 4 步：进阶列操作（全部可选、默认关闭）。"""
+    columns = [str(column) for column in df.columns]
     st.subheader("4. 进阶列操作（全部可选，默认关闭）")
     with st.expander("展开设置：改名 / 删列 / 调顺序 / 类型转换 / 计算列", expanded=False):
         st.caption("应用顺序：删列 → 类型转换（用原列名）→ 重命名 → 计算列 → 列顺序（后两步用新列名）。")
@@ -563,8 +793,13 @@ def show_column_rules(columns: list[str]) -> None:
             height=80,
             key="规则_列顺序",
         )
-        st.multiselect("转成数字的列（转不了保留原文并提示）", options=columns, key="规则_转数字")
-        st.multiselect("转成日期的列（转不了保留原文并提示）", options=columns, key="规则_转日期")
+        to_number = st.multiselect("转成数字的列（转不了保留原文并提示）", options=columns, key="规则_转数字")
+        to_date = st.multiselect("转成日期的列（转不了保留原文并提示）", options=columns, key="规则_转日期")
+        render_conversion_preview(
+            df,
+            ColumnOps(to_number=tuple(to_number), to_date=tuple(to_date)),
+            digest,
+        )
         st.text_area(
             "计算列（每行一个：新列名=表达式）",
             placeholder="总额=单价*数量\n含税=round(总额*1.13, 2)",
@@ -714,6 +949,12 @@ def show_export(
     cleaned: pd.DataFrame,
     options: CleanOptions,
     timeout: float | None,
+    *,
+    problems: list[str] | None = None,
+    report_notes: tuple[str, ...] = (),
+    template_notes: list[str] | None = None,
+    is_drop_missing_checked: bool = False,
+    is_dedupe_checked: bool = False,
 ) -> None:
     """第 6 步：导出选项 + 生成下载（带时间戳文件名，不覆盖原文件）。
 
@@ -722,6 +963,18 @@ def show_export(
     签名（含源文件 digest 和文件名）不一致时旧 ``exports`` 立即失效。
     """
     st.subheader("6. 生成并下载清洗结果")
+    # 未生效规则只提示、不阻塞：这里的 warning 在 fragment 重跑后仍会保留。
+    ineffective = collect_ineffective_rules(
+        options,
+        [str(column) for column in loaded.df.columns],
+        problems or [],
+        report_notes,
+        template_notes or [],
+        is_drop_missing_checked=is_drop_missing_checked,
+        is_dedupe_checked=is_dedupe_checked,
+    )
+    if ineffective:
+        st.warning("以下规则本次没有生效：" + "；".join(ineffective) + "；导出的结果不会包含它们。")
     st.caption(
         "下载不会覆盖你上传的原文件；文件只在内存中处理，不保存到服务器。"
         "数据多时生成要几秒，所以点按钮才生成，避免每改一次选项都卡一下。"
@@ -1034,7 +1287,8 @@ def main() -> None:
     _reset_source_caches(digest, header_row, loaded.sheet_name)
     checks = _checks_for(df, digest, header_row, loaded.sheet_name)
 
-    for note in st.session_state.pop("_模板提示", []):
+    template_notes = st.session_state.pop("_模板提示", [])
+    for note in template_notes:
         st.info(note)
     for note in loaded.notes:
         st.info(note)
@@ -1057,7 +1311,7 @@ def main() -> None:
     for key in ("规则_空值列", "规则_去重列", "规则_删除列", "规则_转数字", "规则_转日期"):
         _sanitize_multiselect(key, columns)
     show_row_rules(columns)
-    show_column_rules(columns)
+    show_column_rules(df, digest)
 
     ops, problems = read_column_ops()
     for problem in problems:
@@ -1077,7 +1331,19 @@ def main() -> None:
         return
     cleaned = report.df
 
-    show_export(name, digest, loaded, cleaned, options, timeout)
+    show_export(
+        name,
+        digest,
+        loaded,
+        cleaned,
+        options,
+        timeout,
+        problems=problems,
+        report_notes=report.notes,
+        template_notes=template_notes,
+        is_drop_missing_checked=bool(st.session_state.get("规则_删除空值行", False)),
+        is_dedupe_checked=bool(st.session_state.get("规则_按列去重", False)),
+    )
     show_batch(name, data, loaded, options, limits, timeout)
     show_templates(columns, ops, problems)
 
@@ -1111,9 +1377,11 @@ def main() -> None:
 - **CSV 的分隔符**：自动识别逗号、分号、制表符、竖线；页面加载时会说明这次按哪种分隔符解析。
 - **CSV 公式防护**：三种模式（英文单引号 / 零宽空格 / 关闭），默认单引号；在第 6 步可切换。
 - **防护的边界**：无法覆盖所有电子表格版本和宏场景；来源不明的文件仍需先核对内容再打开。
-- **资源限制**：单文件 {limits.max_upload_mb} MB、行数 {limits.max_rows:,}、列数
+- **资源限制**：当前生效的是单文件 {limits.max_upload_mb} MB、行数 {limits.max_rows:,}、列数
   {limits.max_cols:,}、单元格 {limits.max_cells:,} 个；XLSX 解压后 {limits.max_xlsx_uncompressed_mb} MB；
-  单次处理默认超时 {int(limits.timeout_seconds)} 秒（左侧可调）。超过 10 万行默认分块清洗并显示进度。
+  单次处理超时 {int(limits.timeout_seconds)} 秒。可在左侧「高级设置」里临时调大上传上限、行数、
+  列数、单元格总数、XLSX 解压上限和超时，只影响本次会话，不改默认值。
+  超过 10 万行默认分块清洗并显示进度。
 - **测试**：本版 306 项自动化测试（v2.2 既有 214 + v2.3 新增 92）覆盖主要流程，
   但工具只做通用格式检查，不保证业务数据完全正确——重要数据请导出前人工核对。
 """
@@ -1125,4 +1393,5 @@ def main() -> None:
     )
 
 
-main()
+if __name__ == "__main__":
+    main()
