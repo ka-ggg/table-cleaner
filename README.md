@@ -1,6 +1,6 @@
 # 表格清洗小工具
 
-**当前版本：v2.4.0（自动化测试总数见下方「确认你在跑哪个版本」；v2.3.0 的 306 项全部保留）**
+**当前版本：v2.5.0（自动化测试总数 670 项，本批发布验收合计 674 项，见下方「确认你在跑哪个版本」；v2.3.0 的 306 项全部保留）**
 
 帮小商家和办公人员快速清理 CSV / XLSX：检查空值、重复行和可疑格式，按需删行、改列、算新列，
 一次处理多张工作表或多个文件，导出干净文件。中文界面，按手机屏幕适配；
@@ -11,7 +11,37 @@ Python 公共 API 调用同一套清洗逻辑。
 > 公共 API 清单见 [`API.md`](API.md)；benchmark 首版基线见 [`benchmarks/BASELINE.md`](benchmarks/BASELINE.md)。
 > 命令行是**预览版**，参数兼容承诺自 v3.0 起算。
 
-## v2.4.0 的改动（当前版本）
+## v2.5.0 的改动（当前版本）
+
+> 交互与发现性版本：**清洗语义、默认值、上限、公共 API、引擎与 DSL 都没有变**；
+> CLI / HTTP API / Streamlit 的默认入口行为与 v2.4.0 一致。本版只改界面交互、测试、
+> 依赖升级（W5）与发布流程。
+> 本 PR 不打 tag、不发布：tag 由人工在合并后确认。
+
+- **缓存与计算反馈（W1）**：解析/检查/清洗按文件指纹与规则缓存，规则未变时提示
+  「已复用本次会话的计算结果（规则未变）」；计算、换表与导出都有「正在…」提示，
+  超过 10 万行保留分块进度条。导出区改为 `st.fragment`，点「生成下载文件」或切换
+  防护/编号模式不再整页重跑。50k×12 的 warm 交互中位数 **0.19–0.21 s**（v2.4.0 基线 0.827 s）。
+- **模板入口与场景预设（W2）**：第 1 步概览后新增「套用最近模板」入口，一键还原规则并提示
+  当前文件缺少的列（这些规则会被跳过）；第 3 步按列名匹配最多两条场景预设提示，只提示、
+  不自动勾选；删行数 >0 时显示提示条与「查看被删样例（前 5 行）」按钮。
+- **未生效汇总、上限入口与转换预览（W3）**：导出前汇总「以下规则本次没有生效」；
+  上传区公布当前上限并指向左侧「高级设置」，命中上限的错误一并给出该入口；
+  第 4 步新增「转换预览（只预览，不改结果）」，显示前 5 个非空值与整列保留原文数量。
+- **覆盖率与 mypy 门禁（W4）**：CI 的 pytest job 改用 `coverage run` 并分别公布
+  `cleaning/` 与 `app.py` 两个覆盖率（只公布，不设 `fail_under`）；新增独立 `mypy` job，
+  存量 EX-001~EX-004 已清零，mypy 0 错误成为硬门禁。
+- **依赖（W5，独立 PR）**：`streamlit==1.67.0` + `pillow>=13.0.0,<14`；pillow 只经 Streamlit
+  传递、仓库无直接 import，升级后此前 pillow 12.3.0 的 **39 条**漏洞命中降为 **0 条**。
+- **版本与文档**：`pyproject.toml`、`cleaning.__version__`、README、USER_GUIDE、API.md 统一为
+  **2.5.0**；README / USER_GUIDE / FAQ 补齐本版新交互，TEST_REPORT 追加发布口径。
+- **测试**：v2.4.0 基线 557 项，新增 W1 42 项、W2 17 项、W3 54 项（W2+W3 合计 71 项；
+  W0 为选择器加固、未新增用例），累计 **670** 项；本批另加 4 项发布验收，合计 **674** 项、0 skipped。
+
+本 PR 不打 tag、不发布：v2.5.0 的 tag 与正式发布由人工在评审通过并合并后另行确认。
+在线 Demo、手机真机人工验收与 P2 只读计划预览仍不在本版交付范围内。
+
+## v2.4.0 的改动（历史基线）
 
 > 入口兼容与发布准备：默认引擎仍是 pandas，清洗语义、默认值、上限、公共 API、
 > CLI/API/UI 默认行为与 v2.3.0 一致；Polars 只作为内部预览，不进入任何默认入口。
@@ -264,7 +294,7 @@ table-cleaner/
 ├── API.md                    # 公共 API 清单 + HTTP 接口说明
 ├── samples/                  # 真机验收用的虚构样例（分号 CSV + 双表 XLSX）
 ├── requirements.txt          # 运行依赖（streamlit / pandas / openpyxl）
-├── requirements-dev.txt      # 测试与工程工具依赖（含 streamlit 1.66.0 / ruff / mypy / coverage）
+├── requirements-dev.txt      # 测试与工程工具依赖（含 streamlit 1.67.0 / ruff / mypy / coverage）
 ├── pyproject.toml            # 打包元数据、console scripts + Ruff / mypy / coverage 配置
 ├── ENGINEERING_STANDARDS.md  # 工程标准与细节要求（常设规范）
 ├── LICENSE                   # MIT 许可证
@@ -507,12 +537,12 @@ CSV 没有单元格类型，用 Excel/WPS 打开时，`=`、`+`、`-`、`@`、�
 ## 确认你在跑哪个版本
 
 ```bash
-grep '__version__' cleaning/__init__.py        # 应显示 2.4.0
+grep '__version__' cleaning/__init__.py        # 应显示 2.5.0
 grep APP_VERSION app.py                        # 应显示 cleaning.__version__
-python -m pytest --collect-only -q | tail -1   # 应显示 557 tests collected
+python -m pytest --collect-only -q | tail -1   # 应显示 674 tests collected
 ```
 
-页面标题下方也会显示 `v2.4.0`。
+页面标题下方也会显示 `v2.5.0`。
 
 ## 安装
 
@@ -522,7 +552,7 @@ python -m pytest --collect-only -q | tail -1   # 应显示 557 tests collected
 cd table-cleaner
 python -m pip install .                          # 安装为 Python 包，注册 table-cleaner / table-cleaner-api
 python -m pip install -r requirements.txt        # 只是运行网页版（不安装 console script）
-python -m pip install -r requirements-dev.txt    # 还要跑测试（含界面测试，streamlit 固定 1.66.0）
+python -m pip install -r requirements-dev.txt    # 还要跑测试（含界面测试，streamlit 固定 1.67.0）
 ```
 
 只装基础依赖时，库层也能独立完成读取、清洗和导出；Streamlit 只是其中一个前端。
@@ -538,7 +568,7 @@ python -m streamlit run app.py
 
 ## 命令行（CLI 预览版）
 
-> **预览版声明**：参数兼容承诺自 v3.0 起算；v2.4.0 仍为预览版，允许调整参数，每次调整会记入 CHANGELOG。
+> **预览版声明**：参数兼容承诺自 v3.0 起算；v2.5.0 仍为预览版，允许调整参数，每次调整会记入 CHANGELOG。
 > CLI 与网页版共用 `CleanOptions` / `Limits`，同一输入、同一模板的输出逐单元格一致。
 
 ```bash
@@ -627,7 +657,7 @@ Windows 防火墙首次弹窗是否点了「允许」（仅专用网络即可）
 ## 测试
 
 ```bash
-python -m pytest -q -rs                        # 全部 306 项（含界面，约 35 秒）
+python -m pytest -q -rs                        # 全部 674 项（含界面，约 90 秒）
 python -m pytest tests/test_app_logic.py -q    # 89 项，约 6 秒（v1.x 逻辑，原样保留）
 python -m pytest tests/test_v2_features.py -q  # 75 项，约 7 秒（v2 新功能逻辑）
 python -m pytest tests/test_v23_cli.py -q      # 30 项（CLI 四子命令 + 错误路径）
@@ -998,7 +1028,7 @@ Streamlit 本身的 WebSocket 连接也会占内存，并发数要按实例内�
 | 带时区的日期 | 同一时区的日期会保留「当地时间的日期」，时区标记不保留 | Excel 单元格不支持时区 | 需要保留时区请用文本；混时区的整列会保留原文并提示 |
 | 计算列算出的大整数 | 例如 `2**100`，页面预览和 CSV 都对，导出 XLSX 后会被 Excel 按 15 位有效数字显示（值被四舍五入） | XLSX 的数字单元格本身就是双精度 | 需要完整数字就导出 CSV，或把结果当文本 |
 | 极老日期（如 1677 年） | 不同 pandas 版本解析结果可能不同（3.0 认成日期、2.2 保留文本） | pandas 版本差异 | 一般业务数据不会遇到；遇到就手工统一格式 |
-| CLI 参数 | v2.4.0 仍是预览版，参数兼容承诺自 v3.0 起算 | 先证明库能脱离网页运行，避免过早冻结接口 | 脚本里调用前看 `table-cleaner <子命令> --help`；调整会记 CHANGELOG |
+| CLI 参数 | v2.5.0 仍是预览版，参数兼容承诺自 v3.0 起算 | 先证明库能脱离网页运行，避免过早冻结接口 | 脚本里调用前看 `table-cleaner <子命令> --help`；调整会记 CHANGELOG |
 | HTTP API | **没有鉴权**，默认只监听 127.0.0.1，任务只存内存、最多 20 个 | 本版只验证库层可被程序调用，不做账号/权限/队列/持久化 | 只在本机或可信内网用；不要暴露公网，重启会丢任务 |
 | 在线 Demo | 本版**未提供**在线 Demo | 没有可用的托管环境，且不在本版交付范围 | 用本地 `python -m streamlit run app.py` 或 CLI/API 试用 |
 | Polars 引擎 | **内部预览**，不是默认引擎；CLI / HTTP API / Streamlit / 批量不暴露；未做 lazy/streaming、行级血缘、性能目标 | v2.4.0 先证明语义等价，性能与原生帧边界留给 v3.0 | 默认用 pandas；内部试跑需 `pip install .[polars]` 并显式传 `engine="polars"`，已知回落见 `docs/ENGINE_ALIGNMENT.md` |

@@ -1,4 +1,4 @@
-# 公共 API 清单（v2.4.0）
+# 公共 API 清单（v2.5.0）
 
 > 权威来源：`cleaning/__init__.py` 的 `__all__`。本文件逐项说明用途与入参/出参约定；
 > `__all__` 之外的名字一律视为内部实现，不承诺兼容。旧版 `from cleaning import ...`
@@ -18,7 +18,7 @@
 
 | 名字 | 用途 |
 | --- | --- |
-| `__version__` | 包版本字符串，当前 `2.4.0` |
+| `__version__` | 包版本字符串，当前 `2.5.0` |
 | `MAX_UPLOAD_BYTES` / `MAX_ROWS` / `MAX_COLS` / `MAX_CELLS` / `MAX_XLSX_UNCOMPRESSED_BYTES` | 现行默认上限常量；运行时可被 `TABLE_CLEANER_*` 环境变量覆盖 |
 | `API_MAX_JOBS` / `API_MAX_BODY_BYTES` / `API_READ_TIMEOUT_SECONDS` | 本地 HTTP API 雏形的内存任务数、请求体上限、正文读取超时 |
 | `EXCEL_MAX_ROWS` / `EXCEL_MAX_COLS` | Excel 格式硬上限，导出时使用 |
