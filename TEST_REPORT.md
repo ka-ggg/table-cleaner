@@ -1,9 +1,118 @@
 # 测试报告（TEST_REPORT）
 
-- 报告日期：2026-11-07（v2.3.0 追加）；第 1–9 节为 v2.0.1 历史记录
-- 被测版本：**v2.3.0**（历史基线 v2.0.1）
-- 测试环境：Android 16 容器（aarch64，vivo V2403A，16 GB 内存），Python 3.12.3
+- 报告日期：2026-11-21（v2.5.0 发布汇总追加）；第 1–9 节为 v2.0.1 历史记录
+- 被测版本：**v2.5.0**（历史小节保留各自版本记录）
+- 测试环境：Linux 7.0.0-44-generic（x86_64，4 核 / 7934 MB），Python 3.12.3
 - 说明：本报告里的数字全部来自实际命令输出；没跑的一律写「未执行」，不编造。
+
+---
+
+## v2.5.0 发布测试汇总（2026-11-21）
+
+> 本节是 v2.5.0 W6（版本与发布准备）的发布口径汇总；W1 / W4 小节保持原记录，不覆盖。
+> **范围：** 只改版本与文档，并新增 `tests/test_v250_release.py` 发布验收；
+> 不改功能代码、依赖版本、清洗语义与默认值。
+
+### 发布环境
+
+| 项目 | 值 |
+| --- | --- |
+| 日期 | 2026-11-21 |
+| 操作系统 | Linux 7.0.0-44-generic（x86_64，4 核 / 7934 MB） |
+| Python | 3.12.3 |
+| streamlit | 1.67.0 |
+| pillow | 13.0.0 |
+| pandas | 3.1.1 |
+| numpy | 2.5.5 |
+| openpyxl | 3.1.5 |
+| pytest | 9.2.0 |
+| Ruff | 0.17.4 |
+| mypy | 2.4.1 |
+| coverage | 7.17.2 |
+
+### 全量测试与覆盖率（G-13）
+
+仓库根目录、同一台机器实测：
+
+```text
+$ python -m pytest -q -rs
+674 passed, 52 warnings in 90.82s     # 0 skipped
+
+$ python -m pytest --collect-only -q | tail -1
+674 tests collected
+
+$ coverage run -m pytest -q -rs
+674 passed, 52 warnings in 163.56s    # 0 skipped
+
+$ coverage report --include='cleaning/*'
+TOTAL                                   3137    139    96%
+
+$ coverage report --include='app.py'
+app.py     585     38    94%
+```
+
+| 口径 | 实测覆盖率 | 规划基线 | 语句数 | 未覆盖 |
+| --- | ---: | ---: | ---: | ---: |
+| `cleaning/` | **96%** | 95% | 3137 | 139 |
+| `app.py` | **94%** | 89% | 585 | 38 |
+
+- 两个口径分开统计、不合成一个总数，未设置 `fail_under`；CI 的覆盖率 report 步骤标了
+  `continue-on-error`，只影响可见性。
+- 670 项为 W1–W5 的功能/回归测试（v2.4.0 基线 557 + W1 42 + W2 17 + W3 54）；
+  本批新增 4 项发布验收，合计 **674** 项、0 skipped。
+
+### mypy 与 Ruff（G-14）
+
+```text
+$ mypy
+Success: no issues found in 22 source files
+
+$ ruff format --check .
+57 files already formatted
+
+$ ruff check .
+All checks passed!
+```
+
+mypy 0 错误：存量 EX-001~EX-004 已在 W4 用类型收窄清零，CI 的独立 `mypy` job
+出现任何错误即失败。
+
+### 50k 交互计时（发布口径）
+
+fixture 与 W1 / W4 相同：50,000 行 × 12 列，种子 `20261114`，5.67 MB，
+sha256 `bdd65d6a11c34d89…`；每个 warm 交互 5 次取中位数。
+
+```bash
+python benchmarks/app_interaction.py --json-out /tmp/app-w6.json --out /tmp/app-w6.md
+```
+
+| 场景 | 本次中位数(s) | p90(s) | 门槛 |
+| --- | ---: | ---: | --- |
+| 冷上传 + 首次渲染 | 0.941 | — | ≤2.0 |
+| 无改动 rerun | 0.141 | 0.171 | — |
+| 行规则：删除完全重复的行 | 0.220 | 0.274 | — |
+| 行规则：删除空值行（已选备注） | 0.220 | 0.248 | — |
+| 行规则：按列去重（已选订单号） | 0.215 | 0.243 | — |
+| 切换公式防护模式 | 0.173 | 0.211 | — |
+| **warm 交互合计** | **0.211** | 0.243 | ≤1.0 |
+| 导出点击（单独记录，不计入 1 秒门槛） | 15.762 | — | — |
+
+判定：warm 中位数 **0.211 s ≤ 1.0 s**（W4 在 streamlit 1.66 下为 0.188 s，本次 1.67 复测
+0.211 s，均远低于门槛），相对 v2.4.0 基线 0.827 s 改善约 74%；冷上传 + 首次渲染
+**0.941 s ≤ 2.0 s**。`tests/test_v250_golden.py` 15 项金标全过，CSV / XLSX / CleanReport
+与 v2.4.0 一致。
+
+### 发布验收结论（G-15 / G-16）
+
+- 版本四处一致：`pyproject.toml`、`cleaning.__version__`、CHANGELOG、README 均为 **2.5.0**；
+  git tag 尚未创建（由人工在合并后确认，不在本 PR 内）。
+- 新增测试：W2 17 + W3 54 = **71**（≥60，G-15 口径）；加上 W1 42 项共新增 113 项，
+  v2.4.0 基线 557 → 670；本批 4 项发布验收后共 **674** 项、0 skipped，
+  超过 G-15 的 617 项门槛；pytest 3.11/3.12 由 CI 矩阵覆盖。
+- CI 静态检查：workflow 含 `coverage run -m pytest`、两个 `coverage report` 与独立 `mypy` job；
+  仓库 `.github` 内没有自动合并（auto-merge）配置或动作。
+- 未执行：Python 3.11 本地实跑（本机仅 3.12，CI 矩阵覆盖）、手机真机人工验收、
+  在线 Demo 部署、真实浏览器人工点击、多用户并发与 500 万行场景。
 
 ---
 
