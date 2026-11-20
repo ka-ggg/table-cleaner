@@ -19,7 +19,37 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # 用 dev 依赖：streamlit 固定 1.66.0，界面测试（AppTest + file_uploader）才会真跑而不是跳过
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q -rs
+      # 覆盖率只公布、不设门禁（G-13）：不配 fail_under，cleaning/ 与 app.py 分开统计，
+      # 不与历史 94%/95% 合成一个数。两个 report 步骤失败只影响可见性，不阻塞合并。
+      - name: 全量测试与覆盖率
+        run: coverage run -m pytest -q -rs
+      - name: 覆盖率（cleaning/）
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo "### 覆盖率（只公布，不设 fail-under）"
+            echo "- cleaning/：$(coverage report --format=total --include='cleaning/*' || echo '无数据')%"
+          } >> "$GITHUB_STEP_SUMMARY"
+          coverage report --include='cleaning/*'
+      - name: 覆盖率（app.py）
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "- app.py：$(coverage report --format=total --include='app.py' || echo '无数据')%" >> "$GITHUB_STEP_SUMMARY"
+          coverage report --include='app.py'
+
+  mypy:
+    # v2.5.0 W4 起的静态类型门禁：存量 4 条（EX-001~EX-004）已清零，出现任何错误即失败。
+    # 版本由 requirements-dev.txt / pyproject 的 dev extras 固定为 mypy==2.4.1。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: mypy
 
   ruff:
     # v2.4.0 起由警告切换为门禁：v2.2.0 / v2.3.0 连续两个发布版本全绿，
