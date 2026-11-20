@@ -141,6 +141,112 @@ python benchmarks/app_interaction.py --json-out /tmp/bench-new.json
 
 ---
 
+## v2.5.0 W4 测试补充（2026-11-20）
+
+> 本节是 v2.5.0 W4（硬项 9 覆盖率可测 G-13、硬项 10 mypy 门禁 G-14）的实测追加；第 1–9 节与 W1 节保持原记录，不覆盖。
+> **范围：** 只改 `pyproject.toml`（coverage 配置）、`.github/workflows/tests.yml`（coverage 报告 + mypy job）、`cleaning/transform.py`（纯类型收窄）与本报告；不改清洗语义、默认值、依赖版本与 UI 行为。
+
+### W4.1 环境
+
+| 项目 | 值 |
+| --- | --- |
+| 日期 | 2026-11-20 |
+| 操作系统 | Linux 容器（`Linux-7.0.0-44-generic-x86_64`，4 核 / 7934 MB） |
+| Python | 3.12.3 |
+| streamlit | 1.66.0 |
+| pandas | 3.1.1 |
+| numpy | 2.5.4 |
+| openpyxl | 3.1.5 |
+| pytest | 9.2.0 |
+| Ruff | 0.17.4 |
+| mypy | 2.4.1 |
+| coverage | 7.17.2 |
+
+### W4.2 全量测试与覆盖率（G-13）
+
+仓库根目录、同一台机器实测：
+
+```text
+$ python -m pytest -q -rs
+670 passed, 52 warnings in 86.70s (0:01:26)     # 0 skipped
+
+$ coverage run -m pytest -q -rs
+670 passed, 52 warnings in 184.92s (0:03:04)    # 0 skipped
+
+$ coverage report --include='cleaning/*'
+TOTAL                                   3137    139    96%
+
+$ coverage report --include='app.py'
+app.py     585     38    94%
+```
+
+| 口径 | 实测覆盖率 | 规划基线 | 语句数 | 未覆盖 |
+| --- | ---: | ---: | ---: | ---: |
+| `cleaning/` | **96%** | 95% | 3137 | 139 |
+| `app.py` | **94%** | 89% | 585 | 38 |
+
+- 两个口径分开统计，不合成一个总数；未设置 `fail_under`，report 步骤失败只影响可见性，不阻塞合并。
+- 配置已写入 `pyproject.toml`：`source = ["cleaning", "app"]`、`concurrency = ["thread"]`。`app.py` 只在脚本线程里由 AppTest 执行，没有 `concurrency = ["thread"]` 时记不到；本批实测两个数字分别落在基线上方。
+- 关于 `source` 写 `app` 而不是 `app.py`：coverage 7.17.2 把非目录项当**可导入模块名**解析。写 `app.py` 会先导入父包 `app`（实际执行整份脚本），coverage 回滚 `sys.modules` 后 numpy 的 C 扩展无法二次加载，测试在收集阶段就报 `cannot load module more than once per process`；写模块名 `app` 指向同一个 `app.py`，`find_spec` 只定位不执行，口径不变。
+- CI 的 pytest job 已改用 `coverage run -m pytest -q -rs`，并分两个 `coverage report` 步骤把百分比写入 job summary；步骤标了 `continue-on-error`。
+- 开销记录：同机裸 pytest 86.70s、带 coverage 184.92s（约 2.1 倍）；规划预估的「慢 10–20%」偏乐观，主要来自线程级 tracing。
+
+### W4.3 mypy（G-14）
+
+```text
+$ mypy
+Success: no issues found in 22 source files
+```
+
+存量 4 条（EX-001~EX-004，均在 `cleaning/transform.py`）已清零；未引入 `Any`，未加 `# type: ignore`：
+
+- `_safe_pow`：`cast(_SupportsPow, base) ** exp`；
+- `_safe_round`：`round(cast(_SupportsRound, value), ndigits)`；
+- 一元负号：`-cast(_SupportsNeg, value)`；
+- `_ALLOWED_FUNCS` 标注为 `dict[str, Callable[..., object]]`。
+
+三个协议（`__pow__` / `__round__` / `__neg__`）只补静态形状，函数参数仍是 `object`，运行时行为不变；计算列与清洗结果由全量 670 项测试（含 `tests/test_v250_golden.py`）保护。CI 新增独立 `mypy` job（Python 3.12，mypy 版本仍固定 2.4.1），出现任何错误即失败。
+
+### W4.4 质量门禁
+
+```text
+$ ruff format --check .
+56 files already formatted
+
+$ ruff check .
+All checks passed!
+```
+
+### W4.5 W1 性能与金标不回退
+
+命令：`python benchmarks/app_interaction.py --json-out /tmp/app-w4.json --out /tmp/app-w4.md`。
+fixture 与 W1 相同：50,000 行 × 12 列，5.67 MB，sha256 `bdd65d6a11c34d89…`。
+
+| 场景 | 本次中位数(s) | p90(s) | 门槛 |
+| --- | ---: | ---: | --- |
+| 冷上传 + 首次渲染 | 0.915 | — | ≤2.0 |
+| 无改动 rerun | 0.142 | 0.145 | — |
+| 行规则：删除完全重复的行 | 0.247 | 0.268 | — |
+| 行规则：删除空值行（已选备注） | 0.216 | 0.257 | — |
+| 行规则：按列去重（已选订单号） | 0.236 | 0.238 | — |
+| 切换公式防护模式 | 0.156 | 0.171 | — |
+| **warm 交互合计** | **0.188** | 0.257 | ≤1.0 |
+| 导出点击（单独记录） | 20.979 | — | 不计入 1 秒门槛 |
+
+判定：warm 中位数 **0.188 s ≤ 1.0 s**，W1 性能不回退；下载按钮仍为「下载 CSV / 下载 XLSX」两个。
+`tests/test_v250_golden.py` 15 项在本次全量 670 项中全过，CSV/XLSX/报告级金标未回退。
+
+### W4.6 未执行
+
+| 项 | 状态 | 原因 |
+| --- | --- | --- |
+| Python 3.11 本地实跑 | 未执行 | 本机只有 3.12；CI 矩阵会跑 3.11/3.12 |
+| 50k 计时与金标的发布口径 | 未执行 | 按规划留 W6 收尾；本节只确认 W1 不回退，不写发布结论 |
+| 覆盖率门禁（`fail_under`） | 未设 | 本批按 G-13 只公布；同时避免与历史 94%/95% 合成一个不可比的数 |
+| W5–W6 | 未执行 | 按 issue 要求只做 W4 |
+
+---
+
 ## 0. v2.3.0 测试补充（2026-11-07）
 
 > 本节是 v2.3.0 的实测追加；下方第 1–9 节保持 v2.0.1 时的历史记录，不覆盖、不改写。
