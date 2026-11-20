@@ -13,7 +13,7 @@ import operator
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import Callable
+from typing import Callable, Protocol, cast
 
 import numpy as np
 import pandas as pd
@@ -34,6 +34,28 @@ _MAX_SAFE_DIGITS = 15  # float64 保证 15 位有效数字可无损往返（超�
 _DIGIT_RE = re.compile(r"[0-9]")
 
 
+class _SupportsPow(Protocol):
+    """计算列里的值（内置数字、numpy 标量、pandas 列）都支持幂运算。
+
+    这些函数收的是 ``object``（求值器不区分标量和列），这里只补一个静态协议，
+    让 mypy 知道 ``**`` 可用；运行时行为不变。
+    """
+
+    def __pow__(self, other: object, mod: object = ...) -> object: ...
+
+
+class _SupportsRound(Protocol):
+    """``round()`` 接受的类型：内置数字与 pandas 列都实现了 ``__round__``。"""
+
+    def __round__(self, ndigits: int = ...) -> object: ...
+
+
+class _SupportsNeg(Protocol):
+    """一元负号接受的类型：内置数字与 pandas 列都实现了 ``__neg__``。"""
+
+    def __neg__(self) -> object: ...
+
+
 def _safe_pow(base: object, exp: object) -> object:
     """幂运算守卫：常数底/指数先估结果位数，10**1e8 这种不必真的算完（会吃光内存）。
 
@@ -47,7 +69,7 @@ def _safe_pow(base: object, exp: object) -> object:
                 f"计算表达式里的 {base}**{exp} 结果太大（超过 {_MAX_POW_BITS} 位整数），"
                 "已停止计算以免卡死；请改成实际需要的算式（例如用列名参与计算）。"
             )
-    return base**exp
+    return cast(_SupportsPow, base) ** exp
 
 
 _ALLOWED_BINOPS = {
@@ -68,10 +90,10 @@ def _safe_round(value: object, ndigits: int = 0) -> object:
             f"round() 的保留位数 {ndigits} 太大（支持 -{_MAX_ROUND_DIGITS}~{_MAX_ROUND_DIGITS}），"
             "请改成实际需要的位数，例如 round(金额, 2)。"
         )
-    return round(value, ndigits)
+    return round(cast(_SupportsRound, value), ndigits)
 
 
-_ALLOWED_FUNCS = {"round": _safe_round, "abs": abs}
+_ALLOWED_FUNCS: dict[str, Callable[..., object]] = {"round": _safe_round, "abs": abs}
 
 
 @dataclass(frozen=True)
@@ -277,7 +299,7 @@ def _eval_node(node: ast.AST, df: pd.DataFrame, aliases: dict[str, str]) -> obje
         return func(_eval_node(node.left, df, aliases), _eval_node(node.right, df, aliases))
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         value = _eval_node(node.operand, df, aliases)
-        return value if isinstance(node.op, ast.UAdd) else -value
+        return value if isinstance(node.op, ast.UAdd) else -cast(_SupportsNeg, value)
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name) or node.func.id not in _ALLOWED_FUNCS:
             raise TableError(
