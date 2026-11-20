@@ -82,8 +82,14 @@ pretty = true
 exclude = ["(?x)(^\\.venv/|__pycache__|^\\.mypy_cache/)"]
 
 [tool.coverage.run]
-source = ["cleaning"]
+# app.py 也要测：v2.5 主要改的是它。AppTest 在脚本线程里跑 app.py，
+# 不配 concurrency = ["thread"] 时这段代码记不到覆盖率。
+# source 里的非目录项按「可导入模块名」解析：写 "app.py" 会让 coverage 导入父包
+# app（执行整份脚本），回滚 sys.modules 后 numpy 扩展无法二次加载；写 "app"
+# 指向同一个 app.py，find_spec 只定位不执行。
+source = ["cleaning", "app"]
 branch = false
+concurrency = ["thread"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
