@@ -3,3 +3,6 @@
 streamlit>=1.50,<2
 pandas>=2.2,<4
 openpyxl>=3.1,<4
+# pillow 只作为 Streamlit 图片能力的传递依赖使用（本应用只处理 CSV/XLSX），
+# 显式下限防止解析器回退到有已知漏洞的 12.x；需 Streamlit >=1.67 才允许 13。
+pillow>=13.0.0,<14
