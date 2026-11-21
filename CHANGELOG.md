@@ -28,7 +28,8 @@
   与 `app.py` 两个覆盖率（只公布，不设 `fail_under`）；新增独立 `mypy` job，
   存量 EX-001~EX-004 已清零，mypy 0 错误成为硬门禁。
 - **依赖（W5，独立 PR）**：`streamlit==1.67.0` + `pillow>=13.0.0,<14`。pillow 只经 Streamlit
-  传递、仓库无直接 import；升级后此前 pillow 12.3.0 的 **39 条**漏洞命中降为 **0 条**。
+  传递、仓库无直接 import；升级后此前 pillow 12.3.0 的 **42 条**漏洞命中降为 **0 条**
+  （W5 验收时以更新后的漏洞库复扫口径；规划期口径为 39 条）。
 - **版本号**：`pyproject.toml`、`cleaning.__version__`、README、USER_GUIDE、API.md 统一升到
   **2.5.0**；README / USER_GUIDE / FAQ 补齐本版新交互，TEST_REPORT 追加发布口径。
 - **测试**：v2.4.0 基线 557 项，新增 W1 42 项、W2 17 项、W3 54 项（W2+W3 合计 71 项；
