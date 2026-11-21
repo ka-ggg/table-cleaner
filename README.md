@@ -288,8 +288,17 @@ table-cleaner/
 │   ├── templates.py          # 规则模板 JSON、template_version 版本识别与校验
 │   ├── batch.py              # 多张工作表 / 多个文件 → 逐一清洗 → 打包 ZIP
 │   ├── service.py            # 编程式入口：clean_bytes / inspect_bytes / 报告渲染
-│   └── cli.py                # table-cleaner 命令行（clean/inspect/template/batch）
+│   ├── cli.py                # table-cleaner 命令行（clean/inspect/template/batch）
+│   ├── pipeline.py           # Pipeline DSL v1：步骤序列的解析、校验与执行（docs/PIPELINE_DSL.md）
+│   ├── engine/               # 双引擎层（默认 pandas；Polars 内部预览）
+│   │   ├── base.py           # 引擎合同（算子接口）
+│   │   ├── pandas_engine.py  # pandas 引擎（默认）
+│   │   ├── polars_engine.py  # Polars 引擎
+│   │   ├── registry.py       # 引擎注册与选择
+│   │   └── known_differences.py # 双引擎已知差异清单（docs/ENGINE_ALIGNMENT.md）
+│   └── schema/               # pipeline-v1.json：Pipeline DSL 的 JSON Schema
 ├── api/http_api.py           # table-cleaner-api 本地 HTTP 雏形（独立入口层，无鉴权）
+├── docs/                     # ENGINE_ALIGNMENT.md 双引擎对齐报告、PIPELINE_DSL.md DSL v1 规范、V250_PLAN.md v2.5.0 规划
 ├── benchmarks/               # benchmark 套件：生成脚本、运行器、BASELINE.md
 ├── API.md                    # 公共 API 清单 + HTTP 接口说明
 ├── samples/                  # 真机验收用的虚构样例（分号 CSV + 双表 XLSX）
@@ -299,7 +308,7 @@ table-cleaner/
 ├── ENGINEERING_STANDARDS.md  # 工程标准与细节要求（常设规范）
 ├── LICENSE                   # MIT 许可证
 ├── pytest.ini                # 让 pytest 能 import 包与 app
-├── .github/workflows/tests.yml  # CI：Python 3.11/3.12 测试矩阵 + Ruff 警告 job
+├── .github/workflows/tests.yml  # CI：Python 3.11/3.12 测试矩阵 + Ruff / mypy 门禁 + 覆盖率上报
 ├── .github/pull_request_template.md  # PR 自检清单
 ├── README.md
 ├── .streamlit/config.toml    # 关掉 Streamlit 用量上报（隐私 + 测试不等网络超时）
@@ -317,7 +326,19 @@ table-cleaner/
     ├── test_v23_templates.py # 13 项：template_version 兼容与逐单元格一致
     ├── test_v23_cli.py       # 30 项：四子命令、退出码、中文错误
     ├── test_v23_api.py       # 25 项：HTTP API 三件事与错误路径
-    └── test_v23_benchmark.py # 6 项：benchmark 数据形态与基线表格
+    ├── test_v23_benchmark.py # 6 项：benchmark 数据形态与基线表格
+    ├── test_v240_pipeline_dsl.py # 96 项：Pipeline DSL v1 解析、校验与执行
+    ├── test_v240_engine_alignment.py # 78 项：双引擎对齐（同输入同输出）
+    ├── test_v240_polars_engine.py # 39 项：Polars 引擎算子
+    ├── test_v240_engine_registry.py # 23 项：引擎注册表与选择
+    ├── test_v240_entry_compat.py # 7 项：入口兼容（默认与显式指定结果一致）
+    ├── test_v240_docs.py     # 6 项：文档口径检查
+    ├── test_v250_p2.py       # 54 项：未生效汇总、上限入口、转换预览
+    ├── test_v250_cache.py    # 22 项：交互缓存与内容指纹
+    ├── test_v250_discovery.py # 17 项：模板入口、场景预设、删行提示
+    ├── test_v250_golden.py   # 15 项：v2.5 金标（行为基线不回退）
+    ├── test_v250_feedback.py # 5 项：计算中反馈
+    └── test_v250_release.py  # 4 项：发布一致性（版本四处、发布数字、CI 门禁）
 ```
 
 `app.py` 只负责界面和收集用户选择；所有判断、清洗、导出都在 `cleaning/` 里，
@@ -739,7 +760,8 @@ v1.x 原有覆盖（89 项）全部保留：正常/空/损坏/超大文件、分
   （最常见是没装 streamlit / 装的是 <1.66 的旧版）；这时不能算「214 项全通过」。
 - CI（`.github/workflows/tests.yml`）装的就是 `requirements-dev.txt`，命令与上面一致；
   它在没有 lxml 的干净 runner 上也能全绿（v2.0.1 起）。v2.2.0 起测试矩阵覆盖 Python 3.11 与 3.12，
-  另有一个 Ruff 检查 job；Ruff 处于警告期（`continue-on-error: true`），测试 job 仍是合并门禁。
+  另有 Ruff 检查 job（v2.4.0 起为硬门禁）与 mypy job（v2.5.0 起），覆盖率随测试 job 上报，
+  测试 job 仍是合并门禁。
 - 历史环境记录（不代表本版）：pandas 2.2.3 + pytest 8.4.2 下 v1.5.0 时是 65 passed；本版未重跑该环境。
 
 ### 界面测试在什么情况下会被跳过（记录在案）
